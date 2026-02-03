@@ -1,23 +1,40 @@
-.venv/
-__pycache__/
-*.pyc
-*.pyo
-*.log
-.env
 .idea/
-.vscode/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# build
-build/
+venv/
 dist/
-*.egg-info/
+build/
+*.spec
+*.pyc
+junit.xml
+__pycache__
+.env
+.venv
+docker
+.task
+.vscode/
+*.log
+.hypothesis/
+.pytest_cache/
 
-# runtime state
-checkpoints.sqlite
-*.sqlite
+# Terraform
+.terraform/
+*.tfstate
+tfplan.json
+.terraform.lock.hcl
 
-# local configs
-config/local.json
+# Coverage
+*.coverage
+coverage.xml
+htmlcov/
+/.claude/
+
+# Generated diagrams
+docs/diagrams/*.mmd
+docs/diagrams/*.png
+docs/diagrams/*.svg
+docs/diagrams/puppeteer-config.json
+
+debug_logs/*.*
+
+AGENTS.md
+.gitattributes
+.beads/

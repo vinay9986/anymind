@@ -4,13 +4,10 @@
   "model_parameters": {
     "temperature": 0.2
   },
-  "system_message": "You are a helpful assistant. Use tools when helpful.",
   "thread_id": "default",
   "tools_enabled": true,
   "tools_policy": "auto",
-  "budget_usd": 5.0,
   "budget_tokens": null,
-  "citations_enabled": true,
   "state_dir": "~/.local/share/anymind",
   "checkpoint": {
     "backend": "sqlite",

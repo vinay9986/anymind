@@ -35,7 +35,7 @@ Note: for Ollama, we default `auto` to `planner` to avoid tool-selection misfire
 ### Budget enforcement
 
 Set `budget_tokens` in `model.json` to enforce a strict token cap. When exceeded,
-the session stops accepting new turns.
+the session stops accepting new turns. USD budgets are not supported.
 
 CLI overrides for fast testing:
 
@@ -112,15 +112,8 @@ Pause is cooperative: it will pause before the next major step (planner/LLM call
 
 ## Evidence ledger & citations
 
-Tool calls are recorded in an evidence ledger. When `citations_enabled` is true,
-the runtime rewrites the response to include citations like `[E1]` using the
-tool outputs from the current turn.
-
-You can disable this behavior in `model.json`:
-
-```json
-\"citations_enabled\": false
-```
+Tool calls are recorded in an evidence ledger. The runtime always rewrites the
+response to include citations like `[E1]` using the tool outputs from the current turn.
 
 ## Quality checks
 

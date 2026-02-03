@@ -220,7 +220,7 @@ class Orchestrator:
         response_text = _message_text(messages[-1]) if messages else ""
 
         evidence_records = session.evidence_ledger.recent()
-        if session.model_config.citations_enabled and evidence_records:
+        if evidence_records:
             if pause_event is not None:
                 await pause_event.wait()
             response_text, citation_usage = await _render_with_citations(

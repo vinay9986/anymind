@@ -21,13 +21,10 @@ class ModelConfig(BaseModel):
     model: str
     model_provider: Optional[str] = None
     model_parameters: Dict[str, Any] = Field(default_factory=dict)
-    system_message: str = "You are a helpful assistant. Use tools when helpful."
     thread_id: str = "default"
     tools_enabled: bool = True
     tools_policy: str = "auto"
-    budget_usd: Optional[float] = None
     budget_tokens: Optional[int] = None
-    citations_enabled: bool = True
     state_dir: Optional[Path] = None
     checkpoint: Optional[CheckpointConfig] = None
     cache: Optional[CacheConfig] = None

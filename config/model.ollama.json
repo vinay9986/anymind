@@ -1,0 +1,22 @@
+{
+  "model": "llama3.3:70b",
+  "model_provider": "ollama",
+  "model_parameters": {
+    "base_url": "http://127.0.0.1:11434",
+    "temperature": 0.2,
+    "num_ctx": 8192
+  },
+  "thread_id": "default",
+  "tools_enabled": true,
+  "tools_policy": "planner",
+  "budget_tokens": null,
+  "state_dir": "~/.local/share/anymind",
+  "checkpoint": {
+    "backend": "sqlite",
+    "path": "~/.local/share/anymind/checkpoints.sqlite"
+  },
+  "cache": {
+    "redis_url": "redis://localhost:6379/0",
+    "ttl_seconds": 300
+  }
+}

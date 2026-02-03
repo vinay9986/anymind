@@ -1,0 +1,20 @@
+{
+  "model": "gpt-4o-mini",
+  "model_provider": "openai",
+  "model_parameters": {
+    "temperature": 0.2
+  },
+  "thread_id": "default",
+  "tools_enabled": true,
+  "tools_policy": "auto",
+  "budget_tokens": null,
+  "state_dir": "~/.local/share/anymind",
+  "checkpoint": {
+    "backend": "sqlite",
+    "path": "~/.local/share/anymind/checkpoints.sqlite"
+  },
+  "cache": {
+    "redis_url": "redis://localhost:6379/0",
+    "ttl_seconds": 300
+  }
+}

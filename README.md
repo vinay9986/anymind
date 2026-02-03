@@ -46,7 +46,12 @@ anymind chat --model us.anthropic.claude-sonnet-4-20250514-v1:0 --provider bedro
 
 ### Sample configs
 
-See `config/` for examples. The default MCP config uses the built-in tool server:
+See `config/` for examples:
+- `config/model.openai.json`
+- `config/model.ollama.json`
+- `config/model.bedrock.json`
+
+The default MCP config uses the built-in tool server:
 `python -m anymind.tools.mcp_local_tools`.
 
 ### Checkpoints

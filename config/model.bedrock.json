@@ -1,0 +1,22 @@
+{
+  "model": "anthropic.claude-3-5-sonnet-20240620-v1:0",
+  "model_provider": "bedrock",
+  "model_parameters": {
+    "region": "us-east-1",
+    "temperature": 0.2,
+    "max_tokens": 1024
+  },
+  "thread_id": "default",
+  "tools_enabled": true,
+  "tools_policy": "auto",
+  "budget_tokens": null,
+  "state_dir": "~/.local/share/anymind",
+  "checkpoint": {
+    "backend": "sqlite",
+    "path": "~/.local/share/anymind/checkpoints.sqlite"
+  },
+  "cache": {
+    "redis_url": "redis://localhost:6379/0",
+    "ttl_seconds": 300
+  }
+}

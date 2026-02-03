@@ -1748,7 +1748,11 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
             pdf_extract.get("matches"), max_chars=max_snippet_chars
         )
         if not snippets:
-            raise ValueError("No matching snippets found in PDF.")
+            google_snippet = str(candidate.get("google_snippet", "") or "").strip()
+            if google_snippet:
+                snippets = [{"text": _truncate_snippet(google_snippet), "score": 0.0}]
+            else:
+                raise ValueError("No matching snippets found in PDF.")
         return {
             "url": str(candidate.get("url", "") or "").strip(),
             "title": str(candidate.get("title", "") or "").strip(),
@@ -1764,14 +1768,14 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
     ) -> dict[str, Any]:
         status_code = scrape_meta.get("target_status_code")
         target_status_code = int(status_code or 0)
-        snippets, note = _semantic_search_text(
+        snippets, _note = _semantic_search_text(
             text=page_text,
             query_text=query,
             max_matches=max_snippets_per_url,
             context_chars=context_chars,
             min_similarity=min_similarity,
         )
-        if note and not snippets:
+        if not snippets:
             keyword_snippets = _find_matches(
                 text=page_text,
                 query=query,
@@ -1794,7 +1798,13 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
             cleaned_snippets.append({"text": text, "score": round(float(score), 4)})
 
         if not cleaned_snippets:
-            raise ValueError("No relevant snippets found in page content.")
+            google_snippet = str(candidate.get("google_snippet", "") or "").strip()
+            if google_snippet:
+                cleaned_snippets = [
+                    {"text": _truncate_snippet(google_snippet), "score": 0.0}
+                ]
+            else:
+                raise ValueError("No relevant snippets found in page content.")
 
         return {
             "url": str(candidate.get("url", "") or "").strip(),

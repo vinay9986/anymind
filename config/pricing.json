@@ -1,0 +1,7 @@
+{
+  "currency": "USD",
+  "prices_per_1k_tokens": {
+    "gpt-4o-mini": { "input": 0.0, "output": 0.0 }
+  },
+  "default": { "input": 0.0, "output": 0.0 }
+}

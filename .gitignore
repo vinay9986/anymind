@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.env
+.idea/
+.vscode/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# build
+build/
+dist/
+*.egg-info/
+
+# runtime state
+checkpoints.sqlite
+*.sqlite
+
+# local configs
+config/local.json

@@ -84,22 +84,6 @@ def chat(
                         border_style="blue",
                     )
                 )
-                if result.get("tokens"):
-                    table = Table(
-                        title="Usage (Tokens)", show_header=True, header_style="bold"
-                    )
-                    table.add_column("Model")
-                    table.add_column("Input Tokens")
-                    table.add_column("Output Tokens")
-                    table.add_column("Total Tokens")
-                    for model_name, totals in result["tokens"].items():
-                        table.add_row(
-                            model_name,
-                            str(totals["input_tokens"]),
-                            str(totals["output_tokens"]),
-                            str(totals["total_tokens"]),
-                        )
-                    console.print(table)
         finally:
             summary = orchestrator.session_summary(session)
             if summary["models"]:

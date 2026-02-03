@@ -21,6 +21,7 @@ class ChatResponse(BaseModel):
     usage: dict
     tokens: dict
     evidence: Optional[list[dict]] = None
+    session_summary: Optional[dict] = None
 
 
 class JobResponse(BaseModel):
@@ -66,7 +67,10 @@ def create_app() -> FastAPI:
             )
         except BudgetExceededError as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
-        return ChatResponse(**result)
+        return ChatResponse(
+            **result,
+            session_summary=orchestrator.session_summary(session),
+        )
 
     @app.post("/jobs", response_model=JobResponse)
     async def run_agent_async(payload: ChatRequest) -> JobResponse:

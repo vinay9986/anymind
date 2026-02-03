@@ -19,7 +19,6 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     usage: dict
-    tokens: dict
     evidence: Optional[list[dict]] = None
     session_summary: Optional[dict] = None
 
@@ -67,6 +66,7 @@ def create_app() -> FastAPI:
             )
         except BudgetExceededError as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
+        result.pop("tokens", None)
         return ChatResponse(
             **result,
             session_summary=orchestrator.session_summary(session),
@@ -86,6 +86,7 @@ def create_app() -> FastAPI:
                 thread_id=payload.thread_id,
                 pause_event=job.pause_event,
             )
+            result.pop("tokens", None)
             return {
                 **result,
                 "session_summary": orchestrator.session_summary(session),

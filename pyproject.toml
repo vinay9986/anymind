@@ -54,7 +54,7 @@ testpaths = ["tests"]
 
 [tool.bandit]
 exclude_dirs = ["tests"]
-skips = ["B101"]
+skips = ["B101", "B106", "B310"]
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]

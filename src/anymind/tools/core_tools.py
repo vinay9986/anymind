@@ -358,7 +358,7 @@ def _load_tokenizer(path: Path, max_length: int) -> Any:
     tok = Tokenizer.from_file(str(path))
     tok.enable_truncation(max_length=max_length)
     pad_id = tok.token_to_id("[PAD]") or 0
-    tok.enable_padding(  # nosec B106
+    tok.enable_padding(
         direction="right",
         pad_id=pad_id,
         pad_token="[PAD]",
@@ -780,7 +780,7 @@ def _google_cse_request(
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:  # nosec B310
+        with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
             status = int(resp.getcode() or 0)
             body = resp.read() or b""
     except urllib.error.HTTPError as exc:
@@ -1434,7 +1434,7 @@ def _scrapfly_request(
     client_timeout = max(5.0, min(timeout_seconds + 10.0, 180.0))
 
     try:
-        with urllib.request.urlopen(req, timeout=client_timeout) as resp:  # nosec B310
+        with urllib.request.urlopen(req, timeout=client_timeout) as resp:
             status = int(resp.getcode() or 0)
             body = resp.read() or b""
     except urllib.error.HTTPError as exc:
@@ -1482,7 +1482,7 @@ def _scrapfly_download_large_object(
         method="GET",
         headers={"User-Agent": _DEFAULT_USER_AGENT},
     )
-    with urllib.request.urlopen(  # nosec B310
+    with urllib.request.urlopen(
         req, timeout=max(5.0, min(timeout_seconds, 180.0))
     ) as resp:
         return resp.read() or b""

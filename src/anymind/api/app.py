@@ -18,6 +18,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+    evidence: Optional[list[dict]] = None
     session_summary: Optional[dict] = None
 
 
@@ -66,7 +67,6 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
         result.pop("tokens", None)
         result.pop("usage", None)
-        result.pop("evidence", None)
         return ChatResponse(
             **result,
             session_summary=orchestrator.session_summary(session),
@@ -88,7 +88,6 @@ def create_app() -> FastAPI:
             )
             result.pop("tokens", None)
             result.pop("usage", None)
-            result.pop("evidence", None)
             return {
                 **result,
                 "session_summary": orchestrator.session_summary(session),

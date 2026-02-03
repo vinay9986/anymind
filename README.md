@@ -6,7 +6,7 @@ LangGraph-based multi-agent runtime with MCP tools, CLI, and API (Swagger).
 
 ```bash
 poetry install
-poetry run anymind chat --model gpt-4o-mini --provider openai
+poetry run anymind chat --model gpt-4.1 --provider openai
 
 # API server (Swagger at /docs)
 poetry run anymind serve --host 0.0.0.0 --port 8000

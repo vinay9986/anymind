@@ -1,5 +1,5 @@
 {
-  "model": "anthropic.claude-3-5-sonnet-20240620-v1:0",
+  "model": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
   "model_provider": "bedrock",
   "model_parameters": {
     "region": "us-east-1",

@@ -67,11 +67,7 @@ Use `backend: \"memory\"` to disable persistence. Redis support can be added lat
 The default MCP server exposes these tools:
 
 - `current_time(format="iso"|"unix", timezone="UTC")`
-- `google_search(search_term, result_num=10, country_region?, geolocation?, result_language?)`
 - `internet_search(query, max_results=5, max_snippets=3, ...)` (Google CSE + Scrapfly)
-- `pdf_extract_text(url|s3_key|pdf_base64, query/queries, search_mode="auto")`
-- `retrieve_and_generate(query, number_of_results=5)` (Bedrock Knowledge Base)
-- `get_current_time()` and `add(a, b)` (simple local tools)
 
 ### Tool configuration (env)
 

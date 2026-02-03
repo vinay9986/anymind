@@ -2251,7 +2251,4 @@ def retrieve_and_generate(
 def register_core_tools(mcp: Any) -> None:
     """Register core tools on a FastMCP server."""
     mcp.tool()(current_time)
-    mcp.tool()(google_search)
-    mcp.tool()(pdf_extract_text)
     mcp.tool()(internet_search)
-    mcp.tool()(retrieve_and_generate)

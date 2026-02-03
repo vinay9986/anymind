@@ -270,6 +270,45 @@ class Orchestrator:
             }
         return totals_out
 
+    def session_summary(self, session: Session) -> Dict[str, Any]:
+        models: Dict[str, Dict[str, float]] = {}
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_input_cost = 0.0
+        total_output_cost = 0.0
+
+        for model_name, totals in session.totals_by_model.items():
+            costs = session.pricing.cost(model_name, totals)
+            model_input = totals.input_tokens
+            model_output = totals.output_tokens
+            models[model_name] = {
+                "input_tokens": model_input,
+                "output_tokens": model_output,
+                "total_tokens": model_input + model_output,
+                "input_cost": costs["input"],
+                "output_cost": costs["output"],
+                "total_cost": costs["total"],
+            }
+            total_input_tokens += model_input
+            total_output_tokens += model_output
+            total_input_cost += costs["input"]
+            total_output_cost += costs["output"]
+
+        total = {
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+            "total_tokens": total_input_tokens + total_output_tokens,
+            "input_cost": total_input_cost,
+            "output_cost": total_output_cost,
+            "total_cost": total_input_cost + total_output_cost,
+        }
+
+        return {
+            "currency": session.pricing.currency,
+            "models": models,
+            "total": total,
+        }
+
     def _total_tokens(self, session: Session) -> int:
         total = 0
         for totals in session.totals_by_model.values():

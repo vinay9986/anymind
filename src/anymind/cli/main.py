@@ -101,6 +101,43 @@ def chat(
                         )
                     console.print(table)
         finally:
+            summary = orchestrator.session_summary(session)
+            if summary["models"]:
+                table = Table(
+                    title="Session Summary",
+                    show_header=True,
+                    header_style="bold",
+                )
+                table.add_column("Model")
+                table.add_column("Input Tokens")
+                table.add_column("Output Tokens")
+                table.add_column("Total Tokens")
+                table.add_column(f"Input Cost ({summary['currency']})")
+                table.add_column(f"Output Cost ({summary['currency']})")
+                table.add_column(f"Total Cost ({summary['currency']})")
+                for model_name, totals in summary["models"].items():
+                    table.add_row(
+                        model_name,
+                        str(totals["input_tokens"]),
+                        str(totals["output_tokens"]),
+                        str(totals["total_tokens"]),
+                        f"{totals['input_cost']:.6f}",
+                        f"{totals['output_cost']:.6f}",
+                        f"{totals['total_cost']:.6f}",
+                    )
+                overall = summary["total"]
+                table.add_row(
+                    "TOTAL",
+                    str(overall["input_tokens"]),
+                    str(overall["output_tokens"]),
+                    str(overall["total_tokens"]),
+                    f"{overall['input_cost']:.6f}",
+                    f"{overall['output_cost']:.6f}",
+                    f"{overall['total_cost']:.6f}",
+                )
+                console.print(table)
+            else:
+                console.print("No usage recorded.", style="dim")
             await session.close()
 
     asyncio.run(_run())

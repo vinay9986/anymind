@@ -76,12 +76,16 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
         async def _runner(job: Job):
-            return await orchestrator.run_turn(
+            result = await orchestrator.run_turn(
                 session,
                 user_input=payload.message,
                 thread_id=payload.thread_id,
                 pause_event=job.pause_event,
             )
+            return {
+                **result,
+                "session_summary": orchestrator.session_summary(session),
+            }
 
         job = job_manager.start(_runner)
         return JobResponse(job_id=job.id, status=job.status.value)

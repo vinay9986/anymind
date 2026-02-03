@@ -167,11 +167,14 @@ async def evidence_tool_interceptor(
 async def bedrock_tool_interceptor(
     request: MCPToolCallRequest, handler
 ) -> MCPToolCallResult:
-    """Return a ToolMessage with plain string content (no text.id fields)."""
+    """Return a ToolMessage with text blocks that exclude text.id fields."""
     result = await handler(request)
     text = tool_result_to_text(result)
     tool_call_id = getattr(request.runtime, "tool_call_id", None) or "tool_call_id"
-    return ToolMessage(content=text or "", tool_call_id=str(tool_call_id))
+    content = []
+    if text:
+        content = [{"type": "text", "text": text}]
+    return ToolMessage(content=content or "", tool_call_id=str(tool_call_id))
 
 
 async def confirm_tool_interceptor(

@@ -239,12 +239,12 @@ class Orchestrator:
 
         self._apply_usage(session, usage_metadata)
         self._enforce_token_budget(session)
-        costs = self._costs(session)
+        token_totals = self._token_totals(session)
 
         return {
             "response": response_text,
             "usage": usage_metadata,
-            "costs": costs,
+            "tokens": token_totals,
             "evidence": [
                 {"id": record.id, "tool": record.tool, "content": record.content}
                 for record in evidence_records
@@ -260,11 +260,15 @@ class Orchestrator:
                 usage.get("input_tokens", 0), usage.get("output_tokens", 0)
             )
 
-    def _costs(self, session: Session) -> Dict[str, Dict[str, float]]:
-        costs: Dict[str, Dict[str, float]] = {}
+    def _token_totals(self, session: Session) -> Dict[str, Dict[str, int]]:
+        totals_out: Dict[str, Dict[str, int]] = {}
         for model_name, totals in session.totals_by_model.items():
-            costs[model_name] = session.pricing.cost(model_name, totals)
-        return costs
+            totals_out[model_name] = {
+                "input_tokens": totals.input_tokens,
+                "output_tokens": totals.output_tokens,
+                "total_tokens": totals.input_tokens + totals.output_tokens,
+            }
+        return totals_out
 
     def _total_tokens(self, session: Session) -> int:
         total = 0

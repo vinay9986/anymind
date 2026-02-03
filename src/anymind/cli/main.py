@@ -84,18 +84,20 @@ def chat(
                         border_style="blue",
                     )
                 )
-                if result.get("costs"):
-                    table = Table(title="Usage", show_header=True, header_style="bold")
+                if result.get("tokens"):
+                    table = Table(
+                        title="Usage (Tokens)", show_header=True, header_style="bold"
+                    )
                     table.add_column("Model")
-                    table.add_column("Input Cost")
-                    table.add_column("Output Cost")
-                    table.add_column("Total")
-                    for model_name, costs in result["costs"].items():
+                    table.add_column("Input Tokens")
+                    table.add_column("Output Tokens")
+                    table.add_column("Total Tokens")
+                    for model_name, totals in result["tokens"].items():
                         table.add_row(
                             model_name,
-                            f"{costs['input']:.6f}",
-                            f"{costs['output']:.6f}",
-                            f"{costs['total']:.6f}",
+                            str(totals["input_tokens"]),
+                            str(totals["output_tokens"]),
+                            str(totals["total_tokens"]),
                         )
                     console.print(table)
         finally:

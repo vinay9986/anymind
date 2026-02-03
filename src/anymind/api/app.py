@@ -19,7 +19,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     usage: dict
-    costs: dict
+    tokens: dict
     evidence: Optional[list[dict]] = None
 
 

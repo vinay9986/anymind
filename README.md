@@ -92,6 +92,10 @@ Semantic search for PDFs/pages is enabled by default. Set ONNX asset paths if yo
 semantic search enabled:
 `PDF_ONNX_MODEL_PATH`, `PDF_ONNX_TOKENIZER_PATH`, `PDF_ONNX_MAX_LENGTH`.
 
+## Usage output
+
+CLI and API responses report token usage (input/output/total) per model.
+
 ## Caching & pooling
 
 LLM clients are reused via an internal pool. Tool results can be cached in Redis

@@ -87,25 +87,51 @@ def resolve_mcp_config(raw: MCPConfig, base_dir: Path) -> Dict[str, Any]:
 
 
 def tool_result_to_text(result: MCPToolCallResult) -> str:
+    def _serialize_item(item: Any) -> str:
+        if isinstance(item, dict):
+            item_type = item.get("type")
+            if item_type == "text":
+                return str(item.get("text", ""))
+            if item_type == "json":
+                payload = item.get("json")
+                try:
+                    return json.dumps(payload, ensure_ascii=False)
+                except Exception:
+                    return str(payload)
+            if "text" in item:
+                return str(item.get("text", ""))
+            if "json" in item:
+                payload = item.get("json")
+                try:
+                    return json.dumps(payload, ensure_ascii=False)
+                except Exception:
+                    return str(payload)
+            try:
+                return json.dumps(item, ensure_ascii=False)
+            except Exception:
+                return str(item)
+        item_type = getattr(item, "type", None)
+        if item_type == "text":
+            return str(getattr(item, "text", ""))
+        if item_type == "json":
+            payload = getattr(item, "json", None)
+            try:
+                return json.dumps(payload, ensure_ascii=False)
+            except Exception:
+                return str(payload)
+        return str(item)
+
     if isinstance(result, ToolMessage):
         content = result.content
         if isinstance(content, list):
-            parts = []
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    parts.append(str(item.get("text", "")))
-                else:
-                    parts.append(str(item))
-            return "\n".join(parts).strip()
+            parts = [_serialize_item(item) for item in content]
+            return "\n".join(part for part in parts if part).strip()
         return str(content).strip()
 
     text_parts = []
     for item in result.content:
-        if getattr(item, "type", None) == "text":
-            text_parts.append(getattr(item, "text", ""))
-        else:
-            text_parts.append(str(item))
-    return "\n".join(text_parts).strip()
+        text_parts.append(_serialize_item(item))
+    return "\n".join(part for part in text_parts if part).strip()
 
 
 def _is_text_only_result(result: MCPToolCallResult) -> bool:

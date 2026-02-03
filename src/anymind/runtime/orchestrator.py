@@ -276,9 +276,15 @@ class Orchestrator:
         total_output_tokens = 0
         total_input_cost = 0.0
         total_output_cost = 0.0
+        provider = (session.model_config.model_provider or "").lower()
+        costs_free = provider == "ollama"
 
         for model_name, totals in session.totals_by_model.items():
-            costs = session.pricing.cost(model_name, totals)
+            costs = (
+                {"input": 0.0, "output": 0.0, "total": 0.0}
+                if costs_free
+                else session.pricing.cost(model_name, totals)
+            )
             model_input = totals.input_tokens
             model_output = totals.output_tokens
             models[model_name] = {

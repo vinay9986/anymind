@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -16,23 +17,41 @@ from anymind.config.schemas import ModelConfig
 from anymind.runtime.logging import configure_logging
 from anymind.runtime.orchestrator import BudgetExceededError, Orchestrator
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, invoke_without_command=True)
 console = Console()
 
 
-@app.command()
-def chat(
-    agent: str = typer.Option("chat_agent", "--agent"),
-    config_path: Optional[str] = typer.Option(None, "--config", "-c"),
-    model: Optional[str] = typer.Option(None, "--model"),
-    provider: Optional[str] = typer.Option(None, "--provider"),
-    temperature: Optional[float] = typer.Option(None, "--temperature"),
-    tools_policy: Optional[str] = typer.Option(None, "--tools-policy"),
-    tools_enabled: Optional[bool] = typer.Option(None, "--tools-enabled/--no-tools"),
-    thread_id: Optional[str] = typer.Option(None, "--thread-id"),
-    log_level: str = typer.Option("INFO", "--log-level"),
+def _format_evidence(evidence: list[dict[str, object]]) -> str:
+    lines: list[str] = []
+    for record in evidence:
+        record_id = str(record.get("id", "")).strip()
+        tool = str(record.get("tool", "")).strip()
+        content = str(record.get("content", "")).strip().replace("\n", " ")
+        if len(content) > 300:
+            content = content[:297] + "..."
+        label = f"[{record_id}] {tool}".strip()
+        if label == "[]":
+            label = "[evidence]"
+        if content:
+            lines.append(f"{label}: {content}")
+        else:
+            lines.append(label)
+    return "\n".join(lines)
+
+
+def _run_chat(
+    *,
+    agent: str,
+    config_path: Optional[str],
+    model: Optional[str],
+    provider: Optional[str],
+    temperature: Optional[float],
+    tools_policy: Optional[str],
+    tools_enabled: Optional[bool],
+    thread_id: Optional[str],
+    log_level: str,
+    query: Optional[str],
 ) -> None:
-    """Run an interactive chat session."""
     configure_logging(log_level)
 
     async def _run() -> None:
@@ -53,37 +72,72 @@ def chat(
         session = await orchestrator.create_session(
             agent_name=agent, model_config=model_config
         )
+        active_thread_id = thread_id or f"{agent}-{uuid.uuid4().hex}"
         try:
-            console.print(
-                Panel(
-                    Text(
-                        "AnyMind chat ready. Type /exit to quit.",
-                        style="bold green",
-                    ),
-                    title="AnyMind",
-                    border_style="green",
-                )
-            )
-            while True:
-                user_input = Prompt.ask("[bold cyan]you[/bold cyan]").strip()
-                if not user_input:
-                    continue
-                if user_input.lower() in {"/exit", "/quit"}:
-                    break
+            if query:
                 try:
                     result = await orchestrator.run_turn(
-                        session, user_input=user_input, thread_id=thread_id
+                        session, user_input=query, thread_id=active_thread_id
                     )
                 except BudgetExceededError as exc:
                     console.print(str(exc), style="bold red")
-                    break
+                else:
+                    console.print(
+                        Panel(
+                            result["response"],
+                            title="assistant",
+                            border_style="blue",
+                        )
+                    )
+                    evidence = result.get("evidence") or []
+                    if evidence:
+                        console.print(
+                            Panel(
+                                _format_evidence(evidence),
+                                title="evidence",
+                                border_style="magenta",
+                            )
+                        )
+            else:
                 console.print(
                     Panel(
-                        result["response"],
-                        title="assistant",
-                        border_style="blue",
+                        Text(
+                            "AnyMind chat ready. Type /exit to quit.",
+                            style="bold green",
+                        ),
+                        title="AnyMind",
+                        border_style="green",
                     )
                 )
+                while True:
+                    user_input = Prompt.ask("[bold cyan]you[/bold cyan]").strip()
+                    if not user_input:
+                        continue
+                    if user_input.lower() in {"/exit", "/quit"}:
+                        break
+                    try:
+                        result = await orchestrator.run_turn(
+                            session, user_input=user_input, thread_id=active_thread_id
+                        )
+                    except BudgetExceededError as exc:
+                        console.print(str(exc), style="bold red")
+                        break
+                    console.print(
+                        Panel(
+                            result["response"],
+                            title="assistant",
+                            border_style="blue",
+                        )
+                    )
+                    evidence = result.get("evidence") or []
+                    if evidence:
+                        console.print(
+                            Panel(
+                                _format_evidence(evidence),
+                                title="evidence",
+                                border_style="magenta",
+                            )
+                        )
         finally:
             summary = orchestrator.session_summary(session)
             if summary["models"]:
@@ -125,6 +179,36 @@ def chat(
             await session.close()
 
     asyncio.run(_run())
+
+
+@app.callback()
+def main(
+    ctx: typer.Context,
+    agent: str = typer.Option("chat_agent", "--agent"),
+    config_path: Optional[str] = typer.Option(None, "--config", "-c"),
+    model: Optional[str] = typer.Option(None, "--model"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    temperature: Optional[float] = typer.Option(None, "--temperature"),
+    tools_policy: Optional[str] = typer.Option(None, "--tools-policy"),
+    tools_enabled: Optional[bool] = typer.Option(None, "--tools-enabled/--no-tools"),
+    thread_id: Optional[str] = typer.Option(None, "--thread-id"),
+    query: Optional[str] = typer.Option(None, "--query", "-q"),
+    log_level: str = typer.Option("INFO", "--log-level"),
+) -> None:
+    if ctx.invoked_subcommand is not None:
+        return
+    _run_chat(
+        agent=agent,
+        config_path=config_path,
+        model=model,
+        provider=provider,
+        temperature=temperature,
+        tools_policy=tools_policy,
+        tools_enabled=tools_enabled,
+        thread_id=thread_id,
+        log_level=log_level,
+        query=query,
+    )
 
 
 @app.command()

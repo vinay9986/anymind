@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 import structlog
 from langchain_core.messages import BaseMessage
@@ -18,6 +18,8 @@ from anymind.runtime.validation_prompts import (
 )
 
 log = structlog.get_logger(__name__)
+
+CallModel = Callable[[str, str], Awaitable[tuple[str, Optional[dict[str, int]]]]]
 
 
 @dataclass
@@ -140,22 +142,24 @@ def _assess_error_severity(error_classification: str) -> str:
     return "low"
 
 
-async def generate_validated_json(
+async def generate_validated_json_with_calls(
     *,
     role_name: str,
     system_prompt: str,
     user_prompt: str,
     validator: JSONStructureValidator,
-    model_client: Any,
+    call_model: CallModel,
+    fix_model: CallModel | None = None,
     max_reasks: int = 3,
     original_task_context: str,
 ) -> ValidatedJsonResult:
-    """Generate a validated JSON object with focused two-phase correction loops."""
+    """Generate a validated JSON object using custom callables."""
 
     session_manager = SessionManager(role_name)
     usage_list: list[dict[str, int]] = []
+    fix_model = fix_model or call_model
 
-    raw, usage = await _call_model(model_client, system_prompt, user_prompt)
+    raw, usage = await call_model(system_prompt, user_prompt)
     if usage:
         usage_list.append(usage)
 
@@ -203,9 +207,7 @@ async def generate_validated_json(
                     error_context=str(getattr(last_exc, "msg", "")),
                     keep_unchanged_sections=keep,
                 )
-                current, usage = await _call_model(
-                    model_client, system_prompt, fix_user
-                )
+                current, usage = await fix_model(system_prompt, fix_user)
                 if usage:
                     usage_list.append(usage)
                 try:
@@ -251,7 +253,7 @@ async def generate_validated_json(
             validation_error_details=validation.error_message or "",
             keep_unchanged_fields=keep_fields,
         )
-        current_json, usage = await _call_model(model_client, system_prompt, fix_user)
+        current_json, usage = await fix_model(system_prompt, fix_user)
         if usage:
             usage_list.append(usage)
         parsed, current_json, extra_attempts = await _syntax_validate_and_fix(
@@ -264,4 +266,33 @@ async def generate_validated_json(
         raw=current_json,
         attempts=attempts,
         usage_metadata=usage_list,
+    )
+
+
+async def generate_validated_json(
+    *,
+    role_name: str,
+    system_prompt: str,
+    user_prompt: str,
+    validator: JSONStructureValidator,
+    model_client: Any,
+    max_reasks: int = 3,
+    original_task_context: str,
+) -> ValidatedJsonResult:
+    """Generate a validated JSON object with focused two-phase correction loops."""
+
+    async def _call(
+        system_prompt: str, user_prompt: str
+    ) -> tuple[str, Optional[dict[str, int]]]:
+        return await _call_model(model_client, system_prompt, user_prompt)
+
+    return await generate_validated_json_with_calls(
+        role_name=role_name,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        validator=validator,
+        call_model=_call,
+        fix_model=_call,
+        max_reasks=max_reasks,
+        original_task_context=original_task_context,
     )

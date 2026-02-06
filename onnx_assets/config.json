@@ -1,0 +1,6 @@
+{
+  "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+  "output_dir": "onnx_assets_out",
+  "max_length": 256,
+  "opset": 17
+}

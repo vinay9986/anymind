@@ -13,7 +13,6 @@ from anymind.config.schemas import MCPConfig
 from anymind.runtime.evidence import get_current_ledger
 from anymind.runtime.cache import CacheBackend
 
-
 _MCP_ENV_ALLOWLIST = {
     "GOOGLE_CSE_API_KEY",
     "GOOGLE_CSE_ENGINE_ID",
@@ -40,6 +39,20 @@ _MCP_ENV_ALLOWLIST = {
     "AWS_PROFILE",
     "AWS_REGION",
     "AWS_DEFAULT_REGION",
+    "ONNX_MODEL_PATH",
+    "ONNX_TOKENIZER_PATH",
+    "ONNX_MAX_LENGTH",
+    "ONNX_EMBED_BATCH_SIZE",
+    "PDF_ONNX_MODEL_PATH",
+    "PDF_ONNX_TOKENIZER_PATH",
+    "PDF_ONNX_MAX_LENGTH",
+}
+
+_MCP_ENV_PATH_KEYS = {
+    "ONNX_MODEL_PATH",
+    "ONNX_TOKENIZER_PATH",
+    "PDF_ONNX_MODEL_PATH",
+    "PDF_ONNX_TOKENIZER_PATH",
 }
 
 
@@ -53,6 +66,26 @@ def _default_mcp_env() -> Dict[str, str]:
 
 
 def resolve_mcp_config(raw: MCPConfig, base_dir: Path) -> Dict[str, Any]:
+    def _resolve_env_path(value: str) -> str:
+        if not value:
+            return value
+        if "$" in value:
+            return value
+        path = Path(value)
+        if path.is_absolute():
+            return value
+        return str((base_dir / path).resolve())
+
+    def _resolve_env_values(env_map: Dict[str, str]) -> Dict[str, str]:
+        resolved_env: Dict[str, str] = {}
+        for key, value in env_map.items():
+            text_value = str(value)
+            if key in _MCP_ENV_PATH_KEYS:
+                resolved_env[key] = _resolve_env_path(text_value)
+            else:
+                resolved_env[key] = text_value
+        return resolved_env
+
     resolved: Dict[str, Any] = {}
     for name, cfg in raw.servers.items():
         if not isinstance(cfg, dict):
@@ -78,10 +111,10 @@ def resolve_mcp_config(raw: MCPConfig, base_dir: Path) -> Dict[str, Any]:
                 merged.update(
                     {str(k): str(v) for k, v in env_cfg.items() if v is not None}
                 )
-                cfg_copy["env"] = merged
+                cfg_copy["env"] = _resolve_env_values(merged)
             elif env_cfg is None:
                 if base_env:
-                    cfg_copy["env"] = base_env
+                    cfg_copy["env"] = _resolve_env_values(base_env)
         resolved[name] = cfg_copy
     return resolved
 

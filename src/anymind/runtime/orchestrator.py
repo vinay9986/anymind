@@ -246,7 +246,12 @@ class Orchestrator:
             "usage": usage_metadata,
             "tokens": token_totals,
             "evidence": [
-                {"id": record.id, "tool": record.tool, "content": record.content}
+                {
+                    "id": record.id,
+                    "tool": record.tool,
+                    "args": record.args,
+                    "content": record.content,
+                }
                 for record in evidence_records
             ],
         }

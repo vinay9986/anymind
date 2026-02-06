@@ -2,6 +2,12 @@
   "local_tools": {
     "transport": "stdio",
     "command": "python",
-    "args": ["-m", "anymind.tools.mcp_local_tools"]
+    "args": ["-m", "anymind.tools.mcp_local_tools"],
+    "env": {
+      "ONNX_MODEL_PATH": "onnx_assets_out/model.onnx",
+      "ONNX_TOKENIZER_PATH": "onnx_assets_out/tokenizer.json",
+      "ONNX_MAX_LENGTH": "256",
+      "ONNX_EMBED_BATCH_SIZE": "1"
+    }
   }
 }

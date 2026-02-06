@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+import uuid
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -20,11 +21,13 @@ class ChatResponse(BaseModel):
     response: str
     evidence: Optional[list[dict]] = None
     session_summary: Optional[dict] = None
+    thread_id: Optional[str] = None
 
 
 class JobResponse(BaseModel):
     job_id: str
     status: str
+    thread_id: Optional[str] = None
 
 
 class JobStatusResponse(BaseModel):
@@ -59,9 +62,10 @@ def create_app() -> FastAPI:
             session = await _get_session(payload.agent)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        thread_id = payload.thread_id or f"{payload.agent}-{uuid.uuid4().hex}"
         try:
             result = await orchestrator.run_turn(
-                session, user_input=payload.message, thread_id=payload.thread_id
+                session, user_input=payload.message, thread_id=thread_id
             )
         except BudgetExceededError as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -70,6 +74,7 @@ def create_app() -> FastAPI:
         return ChatResponse(
             **result,
             session_summary=orchestrator.session_summary(session),
+            thread_id=thread_id,
         )
 
     @app.post("/jobs", response_model=JobResponse)
@@ -78,12 +83,13 @@ def create_app() -> FastAPI:
             session = await _get_session(payload.agent)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        thread_id = payload.thread_id or f"{payload.agent}-{uuid.uuid4().hex}"
 
         async def _runner(job: Job):
             result = await orchestrator.run_turn(
                 session,
                 user_input=payload.message,
-                thread_id=payload.thread_id,
+                thread_id=thread_id,
                 pause_event=job.pause_event,
             )
             result.pop("tokens", None)
@@ -91,10 +97,11 @@ def create_app() -> FastAPI:
             return {
                 **result,
                 "session_summary": orchestrator.session_summary(session),
+                "thread_id": thread_id,
             }
 
         job = job_manager.start(_runner)
-        return JobResponse(job_id=job.id, status=job.status.value)
+        return JobResponse(job_id=job.id, status=job.status.value, thread_id=thread_id)
 
     @app.get("/jobs/{job_id}", response_model=JobStatusResponse)
     async def get_job(job_id: str) -> JobStatusResponse:

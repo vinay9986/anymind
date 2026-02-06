@@ -6,7 +6,7 @@ LangGraph-based multi-agent runtime with MCP tools, CLI, and API (Swagger).
 
 ```bash
 poetry install
-poetry run anymind chat --model gpt-4.1 --provider openai
+poetry run anymind --agent chat_agent -c config/model.openai.json
 
 # API server (Swagger at /docs)
 poetry run anymind serve --host 0.0.0.0 --port 8000
@@ -40,8 +40,12 @@ the session stops accepting new turns. USD budgets are not supported.
 CLI overrides for fast testing:
 
 ```bash
-anymind chat --model llama3.3:70b --provider ollama --tools-policy planner
-anymind chat --model us.anthropic.claude-sonnet-4-20250514-v1:0 --provider bedrock
+anymind --agent chat_agent --model llama3.3:70b --provider ollama --tools-policy planner
+anymind --agent chat_agent --model us.anthropic.claude-sonnet-4-20250514-v1:0 --provider bedrock
+
+# one-shot query mode
+anymind --agent aiot_agent -c config/model.openai.json -q "what is the current price of SOL?"
+anymind --agent giot_agent -c config/model.openai.json -q "summarize the latest CPI trend"
 ```
 
 ### Sample configs
@@ -66,6 +70,25 @@ Configure checkpoint storage in `model.json`:
 ```
 
 Use `backend: \"memory\"` to disable persistence. Redis support can be added later.
+
+### ONNX assets (semantic consensus)
+
+GIoT uses an ONNX embedder for semantic consensus when assets are available.
+To build the assets locally:
+
+```bash
+poetry install --with onnx
+python onnx_assets/build.py
+```
+
+This generates `onnx_assets_out/model.onnx` and `onnx_assets_out/tokenizer.json`.
+
+Override paths if needed:
+
+```bash
+export ONNX_MODEL_PATH=/path/to/model.onnx
+export ONNX_TOKENIZER_PATH=/path/to/tokenizer.json
+```
 
 ## Built-in tools
 

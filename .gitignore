@@ -35,6 +35,8 @@ docs/diagrams/puppeteer-config.json
 
 debug_logs/*.*
 
+onnx_assets_out/
+
 AGENTS.md
 .gitattributes
 .beads/

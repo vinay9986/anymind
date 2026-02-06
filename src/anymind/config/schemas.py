@@ -17,6 +17,25 @@ class CheckpointConfig(BaseModel):
     redis_url: Optional[str] = None
 
 
+class AIoTConfig(BaseModel):
+    min_iterations: int = 1
+    self_consistency_samples: int = 5
+    trace_steps: bool = True
+    trace_max_chars: int = 300
+    trace_samples: bool = True
+
+
+class GIoTConfig(BaseModel):
+    n_agents: int = 3
+    self_consistency_samples: int = 1
+    sim_start: float = 0.9
+    sim_decay: float = 0.03
+    sim_min: float = 0.8
+    vote_ratio: float = 0.6
+    trace_steps: bool = True
+    trace_max_chars: int = 300
+
+
 class ModelConfig(BaseModel):
     model: str
     model_provider: Optional[str] = None
@@ -28,6 +47,8 @@ class ModelConfig(BaseModel):
     state_dir: Optional[Path] = None
     checkpoint: Optional[CheckpointConfig] = None
     cache: Optional[CacheConfig] = None
+    aiot: Optional[AIoTConfig] = None
+    giot: Optional[GIoTConfig] = None
 
 
 class PricingConfig(BaseModel):

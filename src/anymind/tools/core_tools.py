@@ -294,6 +294,7 @@ class _OnnxSentenceEmbedder:
             providers=["CPUExecutionProvider"],
         )
         self._input_names = {inp.name for inp in self._session.get_inputs()}
+        self._force_single = False
 
     def embed(self, texts: list[str]) -> "np.ndarray":
         if np is None:  # pragma: no cover
@@ -312,43 +313,54 @@ class _OnnxSentenceEmbedder:
             batch_size = 32
         batch_size = max(1, min(batch_size, 256))
 
-        pooled_batches: list["np.ndarray"] = []
+        def _embed_batch(texts_batch: list[str]) -> "np.ndarray":
+            pooled_batches: list["np.ndarray"] = []
+            for start in range(0, len(texts_batch), batch_size):
+                slice_texts = texts_batch[start : start + batch_size]
+                encodings = self._tokenizer.encode_batch(slice_texts)
 
-        for start in range(0, len(batch), batch_size):
-            slice_texts = batch[start : start + batch_size]
-            encodings = self._tokenizer.encode_batch(slice_texts)
-
-            input_ids = np.array([e.ids for e in encodings], dtype=np.int64)
-            attention_mask = np.array(
-                [e.attention_mask for e in encodings], dtype=np.int64
-            )
-
-            feed: dict[str, "np.ndarray"] = {
-                "input_ids": input_ids,
-                "attention_mask": attention_mask,
-            }
-            if "token_type_ids" in self._input_names:
-                token_type_ids = np.array(
-                    [e.type_ids for e in encodings], dtype=np.int64
+                input_ids = np.array([e.ids for e in encodings], dtype=np.int64)
+                attention_mask = np.array(
+                    [e.attention_mask for e in encodings], dtype=np.int64
                 )
-                feed["token_type_ids"] = token_type_ids
 
-            (last_hidden,) = self._session.run(None, feed)
+                feed: dict[str, "np.ndarray"] = {
+                    "input_ids": input_ids,
+                    "attention_mask": attention_mask,
+                }
+                if "token_type_ids" in self._input_names:
+                    token_type_ids = np.array(
+                        [e.type_ids for e in encodings], dtype=np.int64
+                    )
+                    feed["token_type_ids"] = token_type_ids
 
-            mask = attention_mask.astype(np.float32)[..., None]
-            summed = (last_hidden * mask).sum(axis=1)
-            denom = np.clip(mask.sum(axis=1), 1e-9, None)
-            pooled = summed / denom
+                (last_hidden,) = self._session.run(None, feed)
 
-            norm = np.linalg.norm(pooled, axis=1, keepdims=True)
-            pooled = pooled / np.clip(norm, 1e-9, None)
-            pooled_batches.append(pooled.astype(np.float32))
+                mask = attention_mask.astype(np.float32)[..., None]
+                summed = (last_hidden * mask).sum(axis=1)
+                denom = np.clip(mask.sum(axis=1), 1e-9, None)
+                pooled = summed / denom
 
-        if not pooled_batches:
-            return np.zeros((0, 0), dtype=np.float32)
-        if len(pooled_batches) == 1:
-            return pooled_batches[0]
-        return np.vstack(pooled_batches)
+                norm = np.linalg.norm(pooled, axis=1, keepdims=True)
+                pooled = pooled / np.clip(norm, 1e-9, None)
+                pooled_batches.append(pooled.astype(np.float32))
+
+            if not pooled_batches:
+                return np.zeros((0, 0), dtype=np.float32)
+            if len(pooled_batches) == 1:
+                return pooled_batches[0]
+            return np.vstack(pooled_batches)
+
+        if self._force_single or len(batch) == 1:
+            if len(batch) == 1:
+                return _embed_batch(batch)
+            return np.vstack([_embed_batch([text]) for text in batch])
+
+        try:
+            return _embed_batch(batch)
+        except Exception:
+            self._force_single = True
+            return np.vstack([_embed_batch([text]) for text in batch])
 
 
 @lru_cache(maxsize=1)
@@ -1646,24 +1658,22 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
     Uses Google Custom Search Engine for URL discovery, Scrapfly for fetching page content, and
     ONNX-based semantic filtering to extract relevant snippets.
 
-    Output is intentionally snippet-only to keep responses lightweight:
-    - For each successful URL: url, title, target_status_code, and top snippets with scores.
-    - Full extracted page text is fetched for retrieval/audit and semantic matching, but is not returned.
-    - PDF URLs are routed through the pdf_extract_text tool; only page+snippet matches are returned.
+    Output includes a concatenated blob with citations for the top results:
+    - Each result includes url, title, target_status_code, snippet, score, and optional error.
+    - PDFs are routed through pdf_extract_text (semantic mode).
     """
     query = str(event.get("query", "") or "").strip()
     if not query:
         raise ValueError("Missing required parameter: query")
 
-    # Cap output size to keep tool output bounded and predictable.
     max_results = int(event.get("max_results", 5) or 5)
     max_results = max(1, min(max_results, 5))
 
-    max_snippets_per_url = int(event.get("max_snippets", 3) or 3)
-    max_snippets_per_url = max(1, min(max_snippets_per_url, 10))
+    max_snippets_per_url = int(event.get("max_snippets", 1) or 1)
+    max_snippets_per_url = max(1, min(max_snippets_per_url, 5))
 
-    context_chars = int(event.get("context_chars", 1000) or 1000)
-    context_chars = max(1000, min(context_chars, 2000))
+    context_chars = int(event.get("context_chars", 1200) or 1200)
+    context_chars = max(800, min(context_chars, 2000))
     max_snippet_chars = context_chars
 
     min_similarity = float(event.get("min_similarity", 0.3) or 0.3)
@@ -1672,12 +1682,10 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
     timeout_seconds = float(event.get("timeout_seconds", 30) or 30)
     timeout_seconds = max(5.0, min(timeout_seconds, 120.0))
 
-    # Step 1: Google CSE (ranked). Fetch extra results so we can still return `max_results`
-    # even when some scrapes fail (top-N, then fall back beyond N as needed).
     google_results = _handle_google_search(
         {
             "search_term": query,
-            "result_num": min(max_results * 2, 10),
+            "result_num": max_results,
         }
     )
 
@@ -1689,20 +1697,29 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
             "urls_attempted": 0,
             "urls_succeeded": 0,
             "notes": "Google Search returned no results.",
+            "concat_blob": "",
+            "citations": [],
         }
 
-    # Step 2: Scrapfly fetch for top-ranked URLs, selecting beyond the top results if needed
-    # to still produce `max_results` successful pages.
+    if _try_load_pdf_embedder() is None:
+        return {
+            "query": query,
+            "results": [],
+            "urls_attempted": 0,
+            "urls_succeeded": 0,
+            "notes": "Semantic search unavailable (missing ONNX assets/dependencies).",
+            "concat_blob": "",
+            "citations": [],
+        }
+
     attempted = 0
     errors: list[str] = []
+    results: list[dict[str, Any]] = []
 
     candidates: list[dict[str, Any]] = []
-    for rank, item in enumerate(google_items):
-        if len(candidates) >= 10:
-            break
+    for rank, item in enumerate(google_items[:max_results]):
         if not isinstance(item, dict):
             continue
-
         url = str(item.get("link", "") or "").strip()
         if not url:
             continue
@@ -1722,9 +1739,9 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
             "urls_attempted": 0,
             "urls_succeeded": 0,
             "notes": "Google Search returned no usable results.",
+            "concat_blob": "",
+            "citations": [],
         }
-
-    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
     def _truncate_snippet(text: str) -> str:
         snippet = str(text or "").strip()
@@ -1734,262 +1751,143 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
             text=snippet, query_text=query, max_chars=max_snippet_chars
         )
 
-    def _build_pdf_result(
-        *,
-        candidate: Mapping[str, Any],
-        pdf_extract: Mapping[str, Any],
-        scrape_meta: Mapping[str, Any] | None,
-    ) -> dict[str, Any]:
-        status_code = None
-        if isinstance(scrape_meta, Mapping):
-            status_code = scrape_meta.get("target_status_code")
-        target_status_code = int(status_code or 200)
-        snippets = _pdf_matches_to_snippets(
-            pdf_extract.get("matches"), max_chars=max_snippet_chars
-        )
-        if not snippets:
-            google_snippet = str(candidate.get("google_snippet", "") or "").strip()
-            if google_snippet:
-                snippets = [{"text": _truncate_snippet(google_snippet), "score": 0.0}]
-            else:
-                raise ValueError("No matching snippets found in PDF.")
-        return {
-            "url": str(candidate.get("url", "") or "").strip(),
-            "title": str(candidate.get("title", "") or "").strip(),
-            "target_status_code": target_status_code,
-            "snippets": snippets,
-        }
-
-    def _build_html_result(
-        *,
-        candidate: Mapping[str, Any],
-        page_text: str,
-        scrape_meta: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        status_code = scrape_meta.get("target_status_code")
-        target_status_code = int(status_code or 0)
-        snippets, _note = _semantic_search_text(
-            text=page_text,
-            query_text=query,
-            max_matches=max_snippets_per_url,
-            context_chars=context_chars,
-            min_similarity=min_similarity,
-        )
-        if not snippets:
-            keyword_snippets = _find_matches(
-                text=page_text,
-                query=query,
-                context_chars=context_chars,
-                max_hits=max_snippets_per_url,
-            )
-            snippets = [{"text": s, "score": 0.0} for s in keyword_snippets]
-
-        cleaned_snippets: list[dict[str, Any]] = []
-        for item in snippets:
-            if not isinstance(item, dict):
-                continue
-            text = _truncate_snippet(str(item.get("text", "") or ""))
-            if not text:
-                continue
-            try:
-                score = float(item.get("score", 0.0) or 0.0)
-            except Exception:
-                score = 0.0
-            cleaned_snippets.append({"text": text, "score": round(float(score), 4)})
-
-        if not cleaned_snippets:
-            google_snippet = str(candidate.get("google_snippet", "") or "").strip()
-            if google_snippet:
-                cleaned_snippets = [
-                    {"text": _truncate_snippet(google_snippet), "score": 0.0}
-                ]
-            else:
-                raise ValueError("No relevant snippets found in page content.")
-
-        return {
-            "url": str(candidate.get("url", "") or "").strip(),
-            "title": str(candidate.get("title", "") or "").strip(),
-            "target_status_code": target_status_code,
-            "snippets": cleaned_snippets,
-        }
-
-    successful_by_idx: dict[int, dict[str, Any]] = {}
-    pending_scrapes: dict[Any, int] = {}
-    next_idx = 0
-
-    scrape_workers = max(1, min(5, len(candidates)))
-
-    min_success_urls_for_stop = min(2, max_results)
-    desired_semantic_snippets_total = max(3, max_snippets_per_url * 2)
-
-    def _semantic_snippets_total() -> int:
-        total = 0
-        for result in successful_by_idx.values():
-            for snippet in (
-                result.get("snippets", []) if isinstance(result, dict) else []
-            ):
-                if not isinstance(snippet, dict):
-                    continue
-                try:
-                    score = float(snippet.get("score", 0.0) or 0.0)
-                except Exception:
-                    score = 0.0
-                if score > 0.0 and score >= float(min_similarity):
-                    total += 1
-        return total
-
-    def _should_stop_early() -> bool:
-        if len(successful_by_idx) < min_success_urls_for_stop:
-            return False
-        return _semantic_snippets_total() >= desired_semantic_snippets_total
-
-    def _attempt_index(idx: int, *, executor: ThreadPoolExecutor) -> None:
-        nonlocal attempted
-        candidate = candidates[idx]
-        url = str(candidate.get("url", "") or "").strip()
-        if not url:
-            return
-
+    for candidate in candidates:
         attempted += 1
+        url = str(candidate.get("url", "") or "").strip()
+        title = str(candidate.get("title", "") or "").strip()
 
-        if _url_looks_like_pdf(url):
-            pdf_extract = _handle_pdf_extract_text(
+        try:
+            if _url_looks_like_pdf(url):
+                pdf_extract = _handle_pdf_extract_text(
+                    {
+                        "url": url,
+                        "query": query,
+                        "search_mode": "semantic",
+                        "max_matches": max_snippets_per_url,
+                        "context_chars": context_chars,
+                        "min_similarity": min_similarity,
+                        "timeout_seconds": min(timeout_seconds, 120.0),
+                    }
+                )
+                if pdf_extract.get("search_mode_used") != "semantic":
+                    raise ValueError(
+                        pdf_extract.get("notes") or "Semantic PDF search unavailable."
+                    )
+                matches = _pdf_matches_to_snippets(
+                    pdf_extract.get("matches"), max_chars=max_snippet_chars
+                )
+                if not matches:
+                    raise ValueError(
+                        pdf_extract.get("notes")
+                        or "No semantic matches found in PDF content."
+                    )
+                best = matches[0]
+                snippet_text = str(best.get("text", "") or "").strip()
+                if not snippet_text:
+                    raise ValueError("No snippet extracted from PDF.")
+                page = best.get("page")
+                if page is not None:
+                    snippet_text = f"(page {page}) {snippet_text}"
+                results.append(
+                    {
+                        "url": url,
+                        "title": title,
+                        "target_status_code": 200,
+                        "snippet": _truncate_snippet(snippet_text),
+                        "score": float(best.get("score", 0.0) or 0.0),
+                        "source": "semantic_pdf",
+                    }
+                )
+                continue
+
+            page_text, scrape_meta = _scrapfly_fetch_text(
+                url=url, timeout_seconds=timeout_seconds
+            )
+            if not page_text or len(page_text) < _SCRAPFLY_MIN_CONTENT_CHARS:
+                raise ValueError(
+                    "Scrapfly returned insufficient content for semantic search."
+                )
+
+            snippets, note = _semantic_search_text(
+                text=page_text,
+                query_text=query,
+                max_matches=max_snippets_per_url,
+                context_chars=context_chars,
+                min_similarity=min_similarity,
+            )
+            if not snippets:
+                raise ValueError(note or "No semantic matches found in page content.")
+            best = snippets[0]
+            snippet_text = str(best.get("text", "") or "").strip()
+            if not snippet_text:
+                raise ValueError("No snippet extracted from semantic search.")
+            results.append(
                 {
                     "url": url,
-                    "query": query,
-                    "search_mode": "auto",
-                    "max_matches": max_snippets_per_url,
-                    "context_chars": context_chars,
-                    "min_similarity": min_similarity,
-                    "timeout_seconds": min(timeout_seconds, 120.0),
+                    "title": title,
+                    "target_status_code": int(
+                        scrape_meta.get("target_status_code", 0) or 0
+                    ),
+                    "snippet": _truncate_snippet(snippet_text),
+                    "score": float(best.get("score", 0.0) or 0.0),
+                    "source": "semantic_html",
                 }
             )
-            successful_by_idx[idx] = _build_pdf_result(
-                candidate=candidate, pdf_extract=pdf_extract, scrape_meta=None
+        except Exception as exc:
+            error_msg = str(exc)
+            errors.append(f"{url}: {error_msg}")
+            results.append(
+                {
+                    "url": url,
+                    "title": title,
+                    "error": error_msg,
+                    "source": "error",
+                }
             )
-            return
 
-        future = executor.submit(
-            _scrapfly_fetch_text, url=url, timeout_seconds=timeout_seconds
-        )
-        pending_scrapes[future] = idx
+    citations: list[dict[str, Any]] = []
+    concat_lines: list[str] = []
+    for idx, result in enumerate(results, start=1):
+        url = str(result.get("url", "") or "").strip()
+        title = str(result.get("title", "") or "").strip()
+        snippet = str(result.get("snippet", "") or "").strip()
+        error = str(result.get("error", "") or "").strip()
+        if snippet:
+            concat_lines.append(f"[{idx}] {title} — {url}\n{snippet}")
+            citations.append(
+                {
+                    "id": idx,
+                    "url": url,
+                    "title": title,
+                    "snippet": snippet,
+                    "score": result.get("score"),
+                }
+            )
+        else:
+            concat_lines.append(
+                f"[{idx}] {title} — {url}\n[error] {error or 'No snippet available.'}"
+            )
+            citations.append({"id": idx, "url": url, "title": title, "error": error})
 
-    initial_budget = min(len(candidates), min(max_results, 3))
-    budget = initial_budget
-
-    with ThreadPoolExecutor(max_workers=scrape_workers) as executor:
-        while True:
-            if next_idx >= len(candidates) and not pending_scrapes:
-                break
-
-            # Fill up to current budget (preserving Google order). We increase budget gradually only
-            # when needed, up to max_results.
-            while (
-                next_idx < len(candidates)
-                and (len(successful_by_idx) + len(pending_scrapes)) < budget
-            ):
-                try:
-                    _attempt_index(next_idx, executor=executor)
-                except Exception as exc:
-                    errors.append(f"{candidates[next_idx]['url']}: {exc}")
-                finally:
-                    next_idx += 1
-
-            if not pending_scrapes:
-                if (
-                    _should_stop_early()
-                    or budget >= max_results
-                    or next_idx >= len(candidates)
-                ):
-                    break
-                if budget < max_results:
-                    budget += 1
-                continue
-
-            done, _ = wait(list(pending_scrapes.keys()), return_when=FIRST_COMPLETED)
-            for future in done:
-                idx = pending_scrapes.pop(future)
-                candidate = candidates[idx]
-                url = str(candidate.get("url", "") or "").strip()
-                try:
-                    page_text, scrape_meta = future.result()
-                except Exception as exc:
-                    errors.append(f"{url}: {exc}")
-                    continue
-
-                status_code = scrape_meta.get("target_status_code")
-                if int(status_code or 0) != 200:
-                    errors.append(f"{url}: target_status_code={status_code}")
-                    continue
-
-                if _looks_like_base64_pdf(page_text):
-                    try:
-                        pdf_extract = _handle_pdf_extract_text(
-                            {
-                                "url": url,
-                                "query": query,
-                                "search_mode": "auto",
-                                "max_matches": max_snippets_per_url,
-                                "context_chars": context_chars,
-                                "min_similarity": min_similarity,
-                                "timeout_seconds": min(timeout_seconds, 120.0),
-                            }
-                        )
-                        successful_by_idx[idx] = _build_pdf_result(
-                            candidate=candidate,
-                            pdf_extract=pdf_extract,
-                            scrape_meta=scrape_meta,
-                        )
-                    except Exception as exc:
-                        errors.append(f"{url}: {exc}")
-                    continue
-
-                if not page_text.strip():
-                    errors.append(f"{url}: No text content")
-                    continue
-
-                try:
-                    successful_by_idx[idx] = _build_html_result(
-                        candidate=candidate,
-                        page_text=page_text,
-                        scrape_meta=scrape_meta,
-                    )
-                except Exception as exc:
-                    errors.append(f"{url}: {exc}")
-                    continue
-
-            if _should_stop_early():
-                break
-
-            # If we have filled our current budget and still need more evidence, expand budget up to max_results.
-            if (
-                budget < max_results
-                and len(successful_by_idx) >= budget
-                and not _should_stop_early()
-            ):
-                budget += 1
-
-    results: list[dict[str, Any]] = []
-    for idx in range(len(candidates)):
-        if idx in successful_by_idx:
-            results.append(successful_by_idx[idx])
-        if len(results) >= max_results:
-            break
-
+    succeeded = len([r for r in results if r.get("snippet")])
     notes = ""
-    if not results:
-        notes = "No content could be extracted from any URLs."
+    if succeeded == 0:
+        notes = "No semantic snippets could be extracted from the top results."
         if errors:
             notes += f" Errors: {'; '.join(errors[:3])}"
-    elif len(results) < max_results and errors:
-        notes = f"Some URLs failed to load: {'; '.join(errors[:2])}"
+    elif errors:
+        notes = (
+            f"Some URLs failed to load or match semantically: {'; '.join(errors[:2])}"
+        )
 
     return {
         "query": query,
         "results": results,
         "urls_attempted": attempted,
-        "urls_succeeded": len(results),
+        "urls_succeeded": succeeded,
         "notes": notes,
+        "concat_blob": "\n\n".join(concat_lines).strip(),
+        "citations": citations,
     }
 
 
@@ -2227,12 +2125,12 @@ def pdf_extract_text(
 def internet_search(
     query: str,
     max_results: int = 5,
-    max_snippets: int = 3,
-    context_chars: int = 1000,
+    max_snippets: int = 1,
+    context_chars: int = 1200,
     min_similarity: float = 0.3,
     timeout_seconds: float = 30.0,
 ) -> dict[str, Any]:
-    """Web search with scraping + semantic filtering."""
+    """Web search with scraping + semantic filtering, returning concatenated snippets."""
     payload: dict[str, Any] = {
         "query": query,
         "max_results": max_results,

@@ -6,6 +6,7 @@ from anymind.agents.base import BaseAgent
 from anymind.agents.chat_agent import ChatAgent
 from anymind.agents.aiot_agent import AIoTAgent
 from anymind.agents.giot_agent import GIoTAgent
+from anymind.agents.agot_agent import AGoTAgent
 
 
 class AgentRegistry:
@@ -14,6 +15,7 @@ class AgentRegistry:
         self.register(ChatAgent())
         self.register(AIoTAgent())
         self.register(GIoTAgent())
+        self.register(AGoTAgent())
 
     def register(self, agent: BaseAgent) -> None:
         self._agents[agent.name] = agent

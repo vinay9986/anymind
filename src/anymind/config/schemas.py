@@ -36,6 +36,15 @@ class GIoTConfig(BaseModel):
     trace_max_chars: int = 300
 
 
+class AGoTConfig(BaseModel):
+    d_max: int = 1
+    l_max: int = 3
+    n_max: int = 3
+    max_concurrency: int = 3
+    trace_steps: bool = True
+    trace_max_chars: int = 300
+
+
 class ModelConfig(BaseModel):
     model: str
     model_provider: Optional[str] = None
@@ -49,6 +58,7 @@ class ModelConfig(BaseModel):
     cache: Optional[CacheConfig] = None
     aiot: Optional[AIoTConfig] = None
     giot: Optional[GIoTConfig] = None
+    agot: Optional[AGoTConfig] = None
 
 
 class PricingConfig(BaseModel):

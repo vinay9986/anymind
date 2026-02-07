@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+import threading
 from typing import Iterable
 
 import numpy as np
@@ -24,9 +25,13 @@ class OnnxSentenceEmbedder:
         self._config = config
         self._tokenizer = _load_tokenizer(config.tokenizer_path, config.max_length)
         self._force_single = False
+        self._lock = threading.Lock()
         options = ort.SessionOptions()
         # Avoid buffer reuse issues with dynamic shapes in some ORT builds.
         options.enable_mem_pattern = False
+        options.enable_mem_reuse = False
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
         self._session = ort.InferenceSession(
             str(config.model_path),
             providers=["CPUExecutionProvider"],
@@ -68,7 +73,8 @@ class OnnxSentenceEmbedder:
             token_type_ids = np.array([e.type_ids for e in encodings], dtype=np.int64)
             feed["token_type_ids"] = token_type_ids
 
-        (last_hidden,) = self._session.run(None, feed)
+        with self._lock:
+            (last_hidden,) = self._session.run(None, feed)
 
         mask = attention_mask.astype(np.float32)[..., None]
         summed = (last_hidden * mask).sum(axis=1)

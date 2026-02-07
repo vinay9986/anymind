@@ -45,6 +45,31 @@ class AGoTConfig(BaseModel):
     trace_max_chars: int = 300
 
 
+class GoTConfig(BaseModel):
+    max_layers: int = 3
+    beam_width: int = 2
+    children_per_expand: int = 3
+    max_concurrency: int = 6
+
+    reflection: bool = True
+    reflection_weight: float = 0.5
+
+    diversity_lambda: float = 0.1
+    relevance_weight: float = 0.2
+
+    prune_delta: float = 0.1
+    success_threshold: float = 0.8
+
+    verify: bool = True
+    verify_threshold: float = 0.8
+    verify_max_retries: int = 2
+
+    max_diversity_samples: int = 20
+    tool_feedback_max_chars: int = 8000
+    context_max_chars: int = 1800
+    final_top_k: int = 12
+
+
 class ModelConfig(BaseModel):
     model: str
     model_provider: Optional[str] = None
@@ -59,6 +84,7 @@ class ModelConfig(BaseModel):
     aiot: Optional[AIoTConfig] = None
     giot: Optional[GIoTConfig] = None
     agot: Optional[AGoTConfig] = None
+    got: Optional[GoTConfig] = None
 
 
 class PricingConfig(BaseModel):

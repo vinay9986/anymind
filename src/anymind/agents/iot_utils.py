@@ -9,7 +9,7 @@ from typing import Any, Iterable, Optional
 import numpy as np
 from langchain_core.messages import BaseMessage
 
-from anymind.runtime.evidence import EvidenceLedger, get_current_ledger
+from anymind.runtime.evidence import get_current_ledger
 from anymind.runtime.onnx_embedder import OnnxEmbedderConfig, OnnxSentenceEmbedder
 from anymind.runtime.usage import UsageTotals, extract_usage_from_messages
 
@@ -78,7 +78,24 @@ def tool_feedback_from_ledger(max_chars: int = 8000) -> str:
     records = ledger.recent()
     if not records:
         return "Tools are available. No external tool results yet."
-    summary = EvidenceLedger.summarize(records, max_chars=max_chars)
+    max_chars = int(max_chars or 0)
+    if max_chars <= 0:
+        max_chars = 8000
+    parts: list[str] = []
+    total = 0
+    for record in records:
+        content = str(record.content or "").strip()
+        if not content:
+            continue
+        block = f"[{record.id}] {record.tool}: {content}"
+        if total + len(block) > max_chars:
+            remaining = max_chars - total
+            if remaining > 0:
+                parts.append(block[:remaining].rstrip())
+            break
+        parts.append(block)
+        total += len(block)
+    summary = "\n".join(parts).strip()
     return summary or "Tools are available. No external tool results yet."
 
 

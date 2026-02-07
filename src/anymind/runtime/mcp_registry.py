@@ -119,6 +119,27 @@ def resolve_mcp_config(raw: MCPConfig, base_dir: Path) -> Dict[str, Any]:
     return resolved
 
 
+def _preferred_json_text(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    for key in ("concat_blob", "answer", "text", "content", "summary", "result"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    matches = payload.get("matches")
+    if isinstance(matches, list):
+        texts: list[str] = []
+        for match in matches:
+            if not isinstance(match, dict):
+                continue
+            snippet = match.get("text") or match.get("snippet")
+            if isinstance(snippet, str) and snippet.strip():
+                texts.append(snippet.strip())
+        if texts:
+            return "\n".join(texts)
+    return None
+
+
 def tool_result_to_text(result: MCPToolCallResult) -> str:
     def _serialize_item(item: Any) -> str:
         if isinstance(item, dict):
@@ -127,6 +148,9 @@ def tool_result_to_text(result: MCPToolCallResult) -> str:
                 return str(item.get("text", ""))
             if item_type == "json":
                 payload = item.get("json")
+                preferred = _preferred_json_text(payload)
+                if preferred:
+                    return preferred
                 try:
                     return json.dumps(payload, ensure_ascii=False)
                 except Exception:
@@ -135,6 +159,9 @@ def tool_result_to_text(result: MCPToolCallResult) -> str:
                 return str(item.get("text", ""))
             if "json" in item:
                 payload = item.get("json")
+                preferred = _preferred_json_text(payload)
+                if preferred:
+                    return preferred
                 try:
                     return json.dumps(payload, ensure_ascii=False)
                 except Exception:

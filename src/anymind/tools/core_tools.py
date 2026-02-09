@@ -22,8 +22,8 @@ from pypdf import PdfReader
 
 
 _DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; Strands-CoreTools/0.1)"
-_GOOGLE_CSE_DEFAULT_ENDPOINT = "https://customsearch.googleapis.com/customsearch/v1"
-_GOOGLE_CSE_DEFAULT_CACHE_TTL_SECONDS = 300
+_KAGI_DEFAULT_ENDPOINT = "https://kagi.com/api/v0/search"
+_KAGI_DEFAULT_CACHE_TTL_SECONDS = 300
 _SEARCH_MODES = ("auto", "keyword", "semantic")
 _SCRAPFLY_SCRAPE_API_ENDPOINT = "https://api.scrapfly.io/scrape"
 _SCRAPFLY_DEFAULT_CACHE_TTL_SECONDS = 300
@@ -596,8 +596,8 @@ def _handle_current_time(event: Mapping[str, Any]) -> dict[str, Any]:
     return payload
 
 
-_google_cse_cached_at: float = 0.0
-_google_cse_cached: dict[str, str] | None = None
+_kagi_cached_at: float = 0.0
+_kagi_cached_key: str | None = None
 
 _scrapfly_cached_at: float = 0.0
 _scrapfly_cached: str | None = None
@@ -624,12 +624,6 @@ def _get_secret_string(secret_arn: str) -> str:
     raise RuntimeError(
         f"Secrets Manager secret {secret_arn} did not contain a usable SecretString."
     )
-
-
-def _get_google_cse_secret_value(secret_arn: str) -> str:
-    if not secret_arn:
-        raise RuntimeError("Missing Google CSE secret ARN")
-    return _get_secret_string(secret_arn)
 
 
 def _normalize_scrapfly_key(raw_key: str) -> str:
@@ -673,114 +667,45 @@ def _get_scrapfly_api_key() -> str:
     return key
 
 
-def _parse_google_cse_credentials_from_json(payload: str) -> tuple[str, str]:
-    try:
-        raw = json.loads(payload)
-    except json.JSONDecodeError as exc:
-        raise ValueError("Google CSE secret must be valid JSON") from exc
-    if not isinstance(raw, dict):
-        raise ValueError("Google CSE secret JSON must be an object")
-
-    normalized = {str(k).strip().lower(): v for k, v in raw.items()}
-
-    api_key = (
-        normalized.get("api_key") or normalized.get("apikey") or normalized.get("key")
-    )
-    engine_id = (
-        normalized.get("engine_id")
-        or normalized.get("engineid")
-        or normalized.get("cx")
-    )
-
-    api_key_str = str(api_key or "").strip()
-    engine_id_str = str(engine_id or "").strip()
-    if not api_key_str or not engine_id_str:
-        raise ValueError(
-            "Google CSE secret JSON must contain api_key and engine_id (or key/cx)"
-        )
-
-    return api_key_str, engine_id_str
-
-
-def _get_google_cse_credentials() -> tuple[str, str]:
-    global _google_cse_cached_at, _google_cse_cached
-
+def _get_kagi_api_key() -> str:
+    global _kagi_cached_at, _kagi_cached_key
     ttl = int(
         os.environ.get(
-            "GOOGLE_CSE_CACHE_TTL_SECONDS", _GOOGLE_CSE_DEFAULT_CACHE_TTL_SECONDS
+            "KAGI_API_KEY_CACHE_TTL_SECONDS", _KAGI_DEFAULT_CACHE_TTL_SECONDS
         )
+        or _KAGI_DEFAULT_CACHE_TTL_SECONDS
     )
-    ttl = max(0, ttl)
     now = time.time()
+    if _kagi_cached_key and (now - _kagi_cached_at) < ttl:
+        return _kagi_cached_key
 
-    if (
-        _google_cse_cached is not None
-        and ttl > 0
-        and (now - _google_cse_cached_at) < ttl
-    ):
-        return _google_cse_cached["api_key"], _google_cse_cached["engine_id"]
-
-    secret_arn = str(os.environ.get("GOOGLE_CSE_SECRET_ARN", "") or "").strip()
-    api_key_secret_arn = str(
-        os.environ.get("GOOGLE_CSE_API_KEY_SECRET_ARN", "") or ""
-    ).strip()
-    engine_id_secret_arn = str(
-        os.environ.get("GOOGLE_CSE_ENGINE_ID_SECRET_ARN", "") or ""
-    ).strip()
-
-    if secret_arn:
-        secret_string = _get_google_cse_secret_value(secret_arn)
-        api_key, engine_id = _parse_google_cse_credentials_from_json(secret_string)
-    elif api_key_secret_arn and engine_id_secret_arn:
-        api_key = _get_google_cse_secret_value(api_key_secret_arn)
-        engine_id = _get_google_cse_secret_value(engine_id_secret_arn)
-    else:
-        api_key = str(os.environ.get("GOOGLE_CSE_API_KEY", "") or "").strip()
-        engine_id = str(os.environ.get("GOOGLE_CSE_ENGINE_ID", "") or "").strip()
-
-    if not api_key or not engine_id:
+    api_key = str(os.environ.get("KAGI_API_KEY", "") or "").strip()
+    if not api_key:
         raise RuntimeError(
-            "Missing Google CSE credentials. Set GOOGLE_CSE_SECRET_ARN (JSON containing api_key/engine_id), "
-            "or GOOGLE_CSE_API_KEY_SECRET_ARN + GOOGLE_CSE_ENGINE_ID_SECRET_ARN, "
-            "or GOOGLE_CSE_API_KEY + GOOGLE_CSE_ENGINE_ID."
+            "Missing Kagi API key. Set KAGI_API_KEY or provide search.kagi_api_key in config."
         )
+    _kagi_cached_key = api_key
+    _kagi_cached_at = now
+    return api_key
 
-    _google_cse_cached = {"api_key": api_key, "engine_id": engine_id}
-    _google_cse_cached_at = now
-    return api_key, engine_id
 
-
-def _clean_google_snippet(value: Any) -> str:
+def _clean_search_snippet(value: Any) -> str:
     snippet = str(value or "")
     return snippet.replace("\xa0", " ").strip()
 
 
-def _google_cse_request(
+def _kagi_request(
     *,
     endpoint: str,
     api_key: str,
-    engine_id: str,
-    search_term: str,
-    country_region: str | None,
-    geolocation: str | None,
-    result_language: str | None,
-    result_num: int,
+    query: str,
+    limit: int,
     timeout_seconds: float,
 ) -> dict[str, Any]:
     params: dict[str, Any] = {
-        "key": api_key,
-        "cx": engine_id,
-        "q": search_term,
-        "num": result_num,
-        "fields": "items(title,link,snippet)",
+        "q": query,
+        "limit": limit,
     }
-    if country_region:
-        params["cr"] = country_region
-    if geolocation:
-        params["gl"] = geolocation
-    if result_language:
-        params["lr"] = result_language
-
     url = f"{endpoint}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(
         url,
@@ -788,6 +713,7 @@ def _google_cse_request(
         headers={
             "User-Agent": _DEFAULT_USER_AGENT,
             "Accept": "application/json",
+            "Authorization": f"Bot {api_key}",
         },
     )
 
@@ -800,30 +726,36 @@ def _google_cse_request(
         message = ""
         try:
             parsed = json.loads(body.decode("utf-8") or "{}")
-            message = str(parsed.get("error", {}).get("message") or "").strip()
+            if isinstance(parsed, dict):
+                errors = parsed.get("error")
+                if isinstance(errors, list) and errors:
+                    message = str(errors[0].get("msg", "") or "").strip()
         except Exception:
             message = ""
         detail = f": {message}" if message else ""
-        raise ValueError(f"Google CSE API error (HTTP {exc.code}){detail}") from exc
+        raise ValueError(f"Kagi API error (HTTP {exc.code}){detail}") from exc
     except urllib.error.URLError as exc:
-        raise ValueError(f"Failed to call Google CSE API: {exc.reason}") from exc
+        raise ValueError(f"Failed to call Kagi API: {exc.reason}") from exc
 
     if status >= 400:
-        raise ValueError(f"Google CSE API returned HTTP {status}")
+        raise ValueError(f"Kagi API returned HTTP {status}")
     try:
         parsed = json.loads(body.decode("utf-8") or "{}")
     except json.JSONDecodeError as exc:
-        raise ValueError("Google CSE API returned invalid JSON") from exc
-    if isinstance(parsed, dict) and "error" in parsed:
-        message = str(parsed.get("error", {}).get("message") or "").strip()
+        raise ValueError("Kagi API returned invalid JSON") from exc
+    if isinstance(parsed, dict) and parsed.get("error"):
+        errors = parsed.get("error")
+        message = ""
+        if isinstance(errors, list) and errors:
+            message = str(errors[0].get("msg", "") or "").strip()
         detail = f": {message}" if message else ""
-        raise ValueError(f"Google CSE API error{detail}")
+        raise ValueError(f"Kagi API error{detail}")
     if not isinstance(parsed, dict):
-        raise ValueError("Google CSE API returned unexpected payload")
+        raise ValueError("Kagi API returned unexpected payload")
     return parsed
 
 
-def _handle_google_search(event: Mapping[str, Any]) -> dict[str, Any]:
+def _handle_kagi_search(event: Mapping[str, Any]) -> dict[str, Any]:
     search_term = str(event.get("search_term", "") or "").strip()
     if not search_term:
         raise ValueError("Missing required parameter: search_term")
@@ -831,58 +763,35 @@ def _handle_google_search(event: Mapping[str, Any]) -> dict[str, Any]:
     result_num = int(event.get("result_num", 10) or 10)
     result_num = max(1, min(result_num, 10))
 
-    def _opt(name: str) -> str | None:
-        val = str(event.get(name, "") or "").strip()
-        return val or None
-
-    country_region = (
-        _opt("country_region")
-        or str(os.environ.get("GOOGLE_CSE_COUNTRY_REGION", "") or "").strip()
-        or None
-    )
-    geolocation = (
-        _opt("geolocation")
-        or str(os.environ.get("GOOGLE_CSE_GEOLOCATION", "us") or "us").strip()
-        or None
-    )
-    result_language = (
-        _opt("result_language")
-        or str(
-            os.environ.get("GOOGLE_CSE_RESULT_LANGUAGE", "lang_en") or "lang_en"
-        ).strip()
-        or None
-    )
-
     timeout_seconds = float(event.get("timeout_seconds", 10) or 10)
     timeout_seconds = max(1.0, min(timeout_seconds, 30.0))
 
-    api_key, engine_id = _get_google_cse_credentials()
+    api_key = _get_kagi_api_key()
     endpoint = str(
-        os.environ.get("GOOGLE_CSE_ENDPOINT", _GOOGLE_CSE_DEFAULT_ENDPOINT)
-        or _GOOGLE_CSE_DEFAULT_ENDPOINT
+        os.environ.get("KAGI_API_ENDPOINT", _KAGI_DEFAULT_ENDPOINT)
+        or _KAGI_DEFAULT_ENDPOINT
     ).strip()
 
-    response = _google_cse_request(
+    response = _kagi_request(
         endpoint=endpoint,
         api_key=api_key,
-        engine_id=engine_id,
-        search_term=search_term,
-        country_region=country_region,
-        geolocation=geolocation,
-        result_language=result_language,
-        result_num=result_num,
+        query=search_term,
+        limit=result_num,
         timeout_seconds=timeout_seconds,
     )
 
-    items = response.get("items", [])
+    data = response.get("data", [])
     results: list[dict[str, str]] = []
-    if isinstance(items, list):
-        for item in items:
+    if isinstance(data, list):
+        for item in data:
             if not isinstance(item, dict):
                 continue
+            t_val = item.get("t")
+            if t_val not in (0, "0"):
+                continue
             title = str(item.get("title", "") or "").strip()
-            link = str(item.get("link", "") or "").strip()
-            snippet = _clean_google_snippet(item.get("snippet"))
+            link = str(item.get("url", "") or "").strip()
+            snippet = _clean_search_snippet(item.get("snippet"))
             if title or link or snippet:
                 results.append(
                     {
@@ -896,7 +805,7 @@ def _handle_google_search(event: Mapping[str, Any]) -> dict[str, Any]:
         "query": search_term,
         "results": results,
         "count": len(results),
-        "source": "google_cse",
+        "source": "kagi",
     }
 
 
@@ -1655,7 +1564,7 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
     """
     Web search with robust scraping + semantic filtering.
 
-    Uses Google Custom Search Engine for URL discovery, Scrapfly for fetching page content, and
+    Uses Kagi Search for URL discovery, Scrapfly for fetching page content, and
     ONNX-based semantic filtering to extract relevant snippets.
 
     Output includes a concatenated blob with citations for the top results:
@@ -1682,21 +1591,21 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
     timeout_seconds = float(event.get("timeout_seconds", 30) or 30)
     timeout_seconds = max(5.0, min(timeout_seconds, 120.0))
 
-    google_results = _handle_google_search(
+    search_results = _handle_kagi_search(
         {
             "search_term": query,
             "result_num": max_results,
         }
     )
 
-    google_items = google_results.get("results")
-    if not isinstance(google_items, list) or not google_items:
+    search_items = search_results.get("results")
+    if not isinstance(search_items, list) or not search_items:
         return {
             "query": query,
             "results": [],
             "urls_attempted": 0,
             "urls_succeeded": 0,
-            "notes": "Google Search returned no results.",
+            "notes": "Kagi Search returned no results.",
             "concat_blob": "",
             "citations": [],
         }
@@ -1717,7 +1626,7 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
 
     candidates: list[dict[str, Any]] = []
-    for rank, item in enumerate(google_items[:max_results]):
+    for rank, item in enumerate(search_items[:max_results]):
         if not isinstance(item, dict):
             continue
         url = str(item.get("link", "") or "").strip()
@@ -1727,7 +1636,7 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
             {
                 "url": url,
                 "title": str(item.get("title", "") or "").strip(),
-                "google_snippet": _clean_google_snippet(item.get("snippet")),
+                "search_snippet": _clean_search_snippet(item.get("snippet")),
                 "source_rank": rank + 1,
             }
         )
@@ -1738,7 +1647,7 @@ def _handle_internet_search(event: Mapping[str, Any]) -> dict[str, Any]:
             "results": [],
             "urls_attempted": 0,
             "urls_succeeded": 0,
-            "notes": "Google Search returned no usable results.",
+            "notes": "Kagi Search returned no usable results.",
             "concat_blob": "",
             "citations": [],
         }
@@ -2059,29 +1968,6 @@ def current_time(format: str = "iso", timezone: str = "UTC") -> dict[str, Any]:
     return _handle_current_time(payload)
 
 
-def google_search(
-    search_term: str,
-    result_num: int = 10,
-    country_region: str | None = None,
-    geolocation: str | None = None,
-    result_language: str | None = None,
-    timeout_seconds: float = 10,
-) -> dict[str, Any]:
-    """Search the web using Google Custom Search Engine."""
-    payload: dict[str, Any] = {
-        "search_term": search_term,
-        "result_num": result_num,
-        "timeout_seconds": timeout_seconds,
-    }
-    if country_region is not None:
-        payload["country_region"] = country_region
-    if geolocation is not None:
-        payload["geolocation"] = geolocation
-    if result_language is not None:
-        payload["result_language"] = result_language
-    return _handle_google_search(payload)
-
-
 def pdf_extract_text(
     *,
     url: str | None = None,
@@ -2130,7 +2016,7 @@ def internet_search(
     min_similarity: float = 0.3,
     timeout_seconds: float = 30.0,
 ) -> dict[str, Any]:
-    """Web search with scraping + semantic filtering, returning concatenated snippets."""
+    """Web search with Kagi discovery, scraping + semantic filtering, returning concatenated snippets."""
     payload: dict[str, Any] = {
         "query": query,
         "max_results": max_results,

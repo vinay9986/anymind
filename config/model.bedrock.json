@@ -10,6 +10,10 @@
   "tools_enabled": true,
   "tools_policy": "auto",
   "budget_tokens": null,
+  "search": {
+    "provider": "kagi",
+    "kagi_api_key": ""
+  },
   "state_dir": "~/.local/share/anymind",
   "checkpoint": {
     "backend": "sqlite",

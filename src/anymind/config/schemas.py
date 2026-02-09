@@ -11,6 +11,12 @@ class CacheConfig(BaseModel):
     ttl_seconds: int = 300
 
 
+class SearchConfig(BaseModel):
+    provider: str = "kagi"
+    kagi_api_key: Optional[str] = None
+    kagi_endpoint: Optional[str] = None
+
+
 class CheckpointConfig(BaseModel):
     backend: str = "sqlite"
     path: Optional[Path] = None
@@ -70,6 +76,28 @@ class GoTConfig(BaseModel):
     final_top_k: int = 12
 
 
+class SopConfig(BaseModel):
+    max_concurrency: int = 3
+    node_context_max_chars: int = 4000
+    node_output_preview_chars: int = 2000
+    include_evidence: bool = True
+    refinement_enabled: bool = True
+    refinement_coverage_threshold: float = 0.7
+    evidence_max_chars: int = 8000
+    evidence_item_max_chars: int = 2000
+    trace_steps: bool = True
+    trace_max_chars: int = 300
+
+
+class ResearchDirectorConfig(BaseModel):
+    max_parallel_probes: int = 6
+    max_probes_per_iteration: int = 8
+    probe_answer_preview_chars: int = 1200
+    similarity_threshold: float = 0.95
+    trace_steps: bool = True
+    trace_max_chars: int = 300
+
+
 class ModelConfig(BaseModel):
     model: str
     model_provider: Optional[str] = None
@@ -78,6 +106,7 @@ class ModelConfig(BaseModel):
     tools_enabled: bool = True
     tools_policy: str = "auto"
     budget_tokens: Optional[int] = None
+    search: Optional[SearchConfig] = None
     state_dir: Optional[Path] = None
     checkpoint: Optional[CheckpointConfig] = None
     cache: Optional[CacheConfig] = None
@@ -85,6 +114,8 @@ class ModelConfig(BaseModel):
     giot: Optional[GIoTConfig] = None
     agot: Optional[AGoTConfig] = None
     got: Optional[GoTConfig] = None
+    sop: Optional[SopConfig] = None
+    research_director: Optional[ResearchDirectorConfig] = None
 
 
 class PricingConfig(BaseModel):

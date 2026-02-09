@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -59,6 +60,20 @@ class Orchestrator:
         self._agents = AgentRegistry()
         self._base_dir = Path.cwd()
 
+    def _apply_search_env(self, model_cfg: ModelConfig) -> None:
+        search_cfg = model_cfg.search
+        if search_cfg is None:
+            return
+        provider = str(search_cfg.provider or "").strip().lower() or "kagi"
+        if provider != "kagi":
+            return
+        api_key = str(search_cfg.kagi_api_key or "").strip()
+        if api_key:
+            os.environ.setdefault("KAGI_API_KEY", api_key)
+        endpoint = str(search_cfg.kagi_endpoint or "").strip()
+        if endpoint:
+            os.environ.setdefault("KAGI_API_ENDPOINT", endpoint)
+
     async def create_session(
         self,
         *,
@@ -68,6 +83,7 @@ class Orchestrator:
         mcp_config: Optional[MCPConfig] = None,
     ) -> Session:
         model_cfg = model_config or load_model_config()
+        self._apply_search_env(model_cfg)
         pricing_cfg = pricing_config or load_pricing_config()
         mcp_cfg = mcp_config
         if mcp_cfg is None:

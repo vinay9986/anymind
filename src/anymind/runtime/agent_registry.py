@@ -8,6 +8,8 @@ from anymind.agents.aiot_agent import AIoTAgent
 from anymind.agents.giot_agent import GIoTAgent
 from anymind.agents.agot_agent import AGoTAgent
 from anymind.agents.got_agent import GoTAgent
+from anymind.agents.sop_agent import SopAgent
+from anymind.agents.research_director_agent import ResearchDirectorAgent
 
 
 class AgentRegistry:
@@ -18,6 +20,8 @@ class AgentRegistry:
         self.register(GIoTAgent())
         self.register(AGoTAgent())
         self.register(GoTAgent())
+        self.register(SopAgent())
+        self.register(ResearchDirectorAgent())
 
     def register(self, agent: BaseAgent) -> None:
         self._agents[agent.name] = agent

@@ -41,6 +41,7 @@ pytest-asyncio = ">=0.23.6"
 bandit = ">=1.7.8"
 pip-audit = ">=2.7.3"
 pre-commit = ">=3.7.0"
+pytest-cov = "^7.0.0"
 
 [tool.poetry.group.onnx.dependencies]
 torch = ">=2.2.0"
@@ -58,6 +59,40 @@ target-version = ["py310"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["anymind"]
+omit = [
+    "src/anymind/api/*",
+    "src/anymind/cli/*",
+    "src/anymind/graphs/*",
+    "src/anymind/tools/*",
+    "src/anymind/agents/*_agent.py",
+    "src/anymind/agents/agot/*",
+    "src/anymind/agents/got/*",
+    "src/anymind/agents/sop/*",
+    "src/anymind/agents/research_director/*",
+    "src/anymind/agents/bedrock_middleware.py",
+    "src/anymind/agents/base.py",
+    "src/anymind/runtime/agent_registry.py",
+    "src/anymind/runtime/checkpoints.py",
+    "src/anymind/runtime/jobs.py",
+    "src/anymind/runtime/llm_factory.py",
+    "src/anymind/runtime/logging.py",
+    "src/anymind/runtime/onnx_embedder.py",
+    "src/anymind/runtime/orchestrator.py",
+    "src/anymind/runtime/validated_json.py",
+    "src/anymind/runtime/validation_prompts.py",
+]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]
 
 [tool.bandit]
 exclude_dirs = ["tests"]

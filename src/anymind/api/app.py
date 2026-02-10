@@ -14,7 +14,7 @@ from anymind.runtime.orchestrator import BudgetExceededError, Orchestrator, Sess
 class ChatRequest(BaseModel):
     message: str
     thread_id: Optional[str] = None
-    agent: str = "chat_agent"
+    agent: str = "research_agent"
 
 
 class ChatResponse(BaseModel):

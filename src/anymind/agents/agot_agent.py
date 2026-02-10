@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import Any, Optional
 
 import structlog
@@ -103,8 +104,15 @@ class _AGoTRuntime:
     ) -> tuple[str, Optional[dict[str, int]]]:
         idx = await self._agent_queue.get()
         try:
+            run_config: dict[str, Any] = {}
+            if config:
+                run_config = dict(config)
+            cfg = dict(run_config.get("configurable", {}))
+            cfg["thread_id"] = f"agot-worker-{uuid.uuid4().hex}"
+            run_config["configurable"] = cfg
+
             result = await self._tool_agents[idx].ainvoke(
-                {"messages": [("user", user_prompt)]}, config=config
+                {"messages": [("user", user_prompt)]}, config=run_config
             )
             messages = result.get("messages", [])
             if not messages:

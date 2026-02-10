@@ -260,6 +260,8 @@ class _SopRuntime:
         for node_id, result in node_results.items():
             update_sop_with_node_result(sop, node_id=node_id, result=result)
 
+        metrics = dict(metrics or {})
+        metrics.pop("execution_id", None)
         self._logger.info("sop_complete", execution_id=execution_id, **metrics)
 
         usage_metadata = usage_tracker.usage_metadata()

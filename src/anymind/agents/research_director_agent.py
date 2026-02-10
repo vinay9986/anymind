@@ -47,7 +47,7 @@ class ProbeResult:
 
 
 class ResearchDirectorAgent:
-    name = "research_director"
+    name = "research_agent"
 
     def build(self, context: AgentContext) -> Any:
         return _ResearchDirectorRuntime(context)
@@ -61,7 +61,7 @@ class _ResearchDirectorRuntime:
         self._settings = (
             context.model_config.research_director or ResearchDirectorConfig()
         )
-        self._logger = structlog.get_logger("anymind.research_director")
+        self._logger = structlog.get_logger("anymind.research_agent")
         self._embedder = try_load_embedder()
 
         self._probe_runtimes: dict[str, Any] = {
@@ -367,7 +367,7 @@ class _ResearchDirectorRuntime:
         )
 
         result = await generate_validated_json_with_calls(
-            role_name="research_director_manager",
+            role_name="research_agent_manager",
             system_prompt=MANAGER_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             validator=manager_validator,
@@ -399,7 +399,7 @@ class _ResearchDirectorRuntime:
 
         if self._settings.trace_steps:
             self._logger.info(
-                "research_director_probe_start",
+                "research_agent_probe_start",
                 probe_id=probe_id,
                 gap_id=gap_id,
                 strategy=strategy,
@@ -425,7 +425,7 @@ class _ResearchDirectorRuntime:
 
         if self._settings.trace_steps:
             self._logger.info(
-                "research_director_probe_end",
+                "research_agent_probe_end",
                 probe_id=probe_id,
                 status=status,
                 answer_preview=self._truncate(answer),
@@ -482,7 +482,7 @@ class _ResearchDirectorRuntime:
         )
 
         result = await generate_validated_json_with_calls(
-            role_name="research_director_final",
+            role_name="research_agent_final",
             system_prompt=FINAL_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             validator=final_validator,
@@ -515,7 +515,7 @@ class _ResearchDirectorRuntime:
         emb_cache: dict[str, Any] = {}
 
         self._logger.info(
-            "research_director_start",
+            "research_agent_start",
             query=query,
             budget_tokens=self._budget_tokens,
             tools=len(self._context.tools),
@@ -528,7 +528,7 @@ class _ResearchDirectorRuntime:
 
             if self._settings.trace_steps:
                 self._logger.info(
-                    "research_director_iteration_start",
+                    "research_agent_iteration_start",
                     iteration=iteration,
                 )
 
@@ -544,7 +544,7 @@ class _ResearchDirectorRuntime:
             except Exception as exc:
                 feedback = f"Manager validation error: {exc}"
                 self._logger.warning(
-                    "research_director_manager_invalid",
+                    "research_agent_manager_invalid",
                     iteration=iteration,
                     error=str(exc),
                 )
@@ -583,7 +583,7 @@ class _ResearchDirectorRuntime:
             except Exception as exc:
                 feedback = f"Probe guard failed: {exc}"
                 self._logger.warning(
-                    "research_director_probe_guard_failed",
+                    "research_agent_probe_guard_failed",
                     iteration=iteration,
                     error=str(exc),
                 )

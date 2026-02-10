@@ -184,7 +184,7 @@ def _run_chat(
 @app.callback()
 def main(
     ctx: typer.Context,
-    agent: str = typer.Option("chat_agent", "--agent"),
+    agent: str = typer.Option("research_agent", "--agent"),
     config_path: Optional[str] = typer.Option(None, "--config", "-c"),
     model: Optional[str] = typer.Option(None, "--model"),
     provider: Optional[str] = typer.Option(None, "--provider"),

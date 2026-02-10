@@ -3,11 +3,6 @@ from __future__ import annotations
 from typing import Dict, Type
 
 from anymind.agents.base import BaseAgent
-from anymind.agents.chat_agent import ChatAgent
-from anymind.agents.aiot_agent import AIoTAgent
-from anymind.agents.giot_agent import GIoTAgent
-from anymind.agents.agot_agent import AGoTAgent
-from anymind.agents.got_agent import GoTAgent
 from anymind.agents.sop_agent import SopAgent
 from anymind.agents.research_director_agent import ResearchDirectorAgent
 
@@ -15,11 +10,6 @@ from anymind.agents.research_director_agent import ResearchDirectorAgent
 class AgentRegistry:
     def __init__(self) -> None:
         self._agents: Dict[str, BaseAgent] = {}
-        self.register(ChatAgent())
-        self.register(AIoTAgent())
-        self.register(GIoTAgent())
-        self.register(AGoTAgent())
-        self.register(GoTAgent())
         self.register(SopAgent())
         self.register(ResearchDirectorAgent())
 

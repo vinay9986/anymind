@@ -15,6 +15,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import threading
 from typing import Any, Mapping, Sequence
 
 import boto3
@@ -289,12 +290,28 @@ class _OnnxSentenceEmbedder:
         if np is None or ort is None or Tokenizer is None:  # pragma: no cover
             raise RuntimeError("onnx semantic search dependencies are not available")
         self._tokenizer = _load_tokenizer(tokenizer_path, max_length)
+        self._lock = threading.Lock()
+        options = ort.SessionOptions()  # type: ignore[union-attr]
+        # Dynamic batch sizes can trigger buffer re-use warnings in some ORT builds.
+        # Disable mem pattern/reuse to avoid shape mismatch warnings.
+        options.enable_mem_pattern = False
+        options.enable_mem_reuse = False
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
         self._session = ort.InferenceSession(  # type: ignore[union-attr]
             str(model_path),
             providers=["CPUExecutionProvider"],
+            sess_options=options,
         )
         self._input_names = {inp.name for inp in self._session.get_inputs()}
         self._force_single = False
+        self._fixed_batch = False
+        outputs = self._session.get_outputs()
+        if outputs:
+            shape = outputs[0].shape
+            if shape and isinstance(shape[0], int) and shape[0] == 1:
+                self._fixed_batch = True
+                self._force_single = True
 
     def embed(self, texts: list[str]) -> "np.ndarray":
         if np is None:  # pragma: no cover
@@ -334,7 +351,8 @@ class _OnnxSentenceEmbedder:
                     )
                     feed["token_type_ids"] = token_type_ids
 
-                (last_hidden,) = self._session.run(None, feed)
+                with self._lock:
+                    (last_hidden,) = self._session.run(None, feed)
 
                 mask = attention_mask.astype(np.float32)[..., None]
                 summed = (last_hidden * mask).sum(axis=1)

@@ -38,6 +38,11 @@ class OnnxSentenceEmbedder:
             sess_options=options,
         )
         self._input_names = {inp.name for inp in self._session.get_inputs()}
+        outputs = self._session.get_outputs()
+        if outputs:
+            shape = outputs[0].shape
+            if shape and isinstance(shape[0], int) and shape[0] == 1:
+                self._force_single = True
 
     def embed(self, texts: Iterable[str]) -> np.ndarray:
         batch = [t if isinstance(t, str) else str(t) for t in texts]

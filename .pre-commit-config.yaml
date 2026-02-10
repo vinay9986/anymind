@@ -15,7 +15,7 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: poetry run pytest
+        entry: poetry run pytest --cov=anymind --cov-report=term-missing
         language: system
         types: [python]
         pass_filenames: false

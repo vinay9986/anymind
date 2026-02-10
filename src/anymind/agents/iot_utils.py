@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -34,6 +35,85 @@ def extract_user_input(payload: dict[str, Any]) -> str:
     return str(
         payload.get("input") or payload.get("query") or payload.get("message") or ""
     )
+
+
+def extract_conversation_messages(payload: dict[str, Any]) -> list[tuple[str, str]]:
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return []
+    parsed: list[tuple[str, str]] = []
+    for item in messages:
+        if isinstance(item, tuple) and len(item) == 2:
+            role, content = item
+            role_name = str(role or "").strip().lower()
+            if not role_name:
+                continue
+            parsed.append((role_name, str(content)))
+            continue
+        if hasattr(item, "type") and hasattr(item, "content"):
+            role_name = str(getattr(item, "type", "") or "").strip().lower()
+            if not role_name:
+                role_name = str(getattr(item, "role", "") or "").strip().lower()
+            if role_name:
+                parsed.append((role_name, str(getattr(item, "content", ""))))
+            continue
+        if isinstance(item, dict):
+            role_name = str(item.get("role") or item.get("type") or "").strip().lower()
+            if role_name:
+                parsed.append((role_name, str(item.get("content", ""))))
+    return parsed
+
+
+def build_conversation_query(messages: list[tuple[str, str]]) -> str:
+    if not messages:
+        return ""
+    last_user_idx = None
+    for idx in range(len(messages) - 1, -1, -1):
+        if messages[idx][0] == "user":
+            last_user_idx = idx
+            break
+    if last_user_idx is None:
+        return str(messages[-1][1])
+    latest = str(messages[last_user_idx][1])
+    history_pairs = messages[:last_user_idx]
+    if not history_pairs:
+        return latest
+    lines: list[str] = []
+    for role, content in history_pairs:
+        if role not in {"user", "assistant"}:
+            continue
+        label = "User" if role == "user" else "Assistant"
+        lines.append(f"{label}: {content}")
+    history = "\n".join(lines).strip()
+    if not history:
+        return latest
+    return f"Conversation so far:\n{history}\n\nLatest user question:\n{latest}"
+
+
+async def ensure_current_time_tool(tools: Iterable[Any]) -> None:
+    tool = None
+    for candidate in tools or []:
+        name = str(getattr(candidate, "name", "") or "")
+        if name in {"current_time", "get_current_time"}:
+            tool = candidate
+            break
+    if tool is None:
+        return
+    payload = {"format": "iso", "timezone": "UTC"}
+    try:
+        if hasattr(tool, "ainvoke"):
+            await tool.ainvoke(payload)
+            return
+        if hasattr(tool, "invoke"):
+            result = tool.invoke(payload)
+        elif callable(tool):
+            result = tool(payload)
+        else:
+            return
+        if asyncio.iscoroutine(result):
+            await result
+    except Exception:
+        return
 
 
 @dataclass

@@ -17,6 +17,7 @@ from anymind.agents.bedrock_middleware import BedrockToolResultSanitizer
 from anymind.agents.iot_utils import (
     UsageCounter,
     budget_exhausted,
+    ensure_current_time_tool,
     extract_user_input,
     message_text,
 )
@@ -182,6 +183,7 @@ class _AGoTRuntime:
         self._budget_exhausted = False
 
         query = extract_user_input(inputs)
+        await ensure_current_time_tool(self._context.tools)
         self._logger.info(
             "agot_start",
             query=query,

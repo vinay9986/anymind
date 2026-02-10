@@ -47,6 +47,7 @@ class Session:
     agent_cache: Dict[tuple[str, ...], Any] = field(default_factory=dict)
     budget_exhausted: bool = False
     evidence_ledger: EvidenceLedger = field(default_factory=EvidenceLedger)
+    chat_history: list[tuple[str, str]] = field(default_factory=list)
 
     async def close(self) -> None:
         if self.checkpointer_conn is not None:
@@ -182,6 +183,12 @@ class Orchestrator:
             if pause_event is not None:
                 await pause_event.wait()
 
+            input_messages: list[tuple[str, str]] = [("user", user_input)]
+            if session.agent_name == "research_agent" and session.chat_history:
+                max_messages = 20
+                history = session.chat_history[-max_messages:]
+                input_messages = history + [("user", user_input)]
+
             agent = (
                 session.agent_with_tools if tools_enabled else session.agent_no_tools
             )
@@ -229,11 +236,15 @@ class Orchestrator:
                     "thread_id": thread_id or session.model_config.thread_id
                 }
             }
-            result = await agent.ainvoke(
-                {"messages": [("user", user_input)]}, config=config
-            )
+            result = await agent.ainvoke({"messages": input_messages}, config=config)
         messages = result.get("messages", [])
         response_text = _message_text(messages[-1]) if messages else ""
+
+        if session.agent_name == "research_agent":
+            session.chat_history.append(("user", user_input))
+            session.chat_history.append(("assistant", response_text))
+            if len(session.chat_history) > 40:
+                session.chat_history = session.chat_history[-40:]
 
         evidence_records = session.evidence_ledger.recent()
         if evidence_records:

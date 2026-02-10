@@ -13,7 +13,11 @@ from anymind.agents.aiot_agent import AIoTAgent
 from anymind.agents.giot_agent import GIoTAgent
 from anymind.agents.agot_agent import AGoTAgent
 from anymind.agents.got_agent import GoTAgent
-from anymind.agents.iot_utils import extract_user_input, message_text
+from anymind.agents.iot_utils import (
+    ensure_current_time_tool,
+    extract_user_input,
+    message_text,
+)
 from anymind.config.schemas import SopConfig
 from anymind.runtime.evidence import get_current_ledger
 from anymind.runtime.usage import UsageTotals, normalize_usage_metadata
@@ -190,6 +194,7 @@ class _SopRuntime:
         self, inputs: dict[str, Any], config: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
         query = extract_user_input(inputs)
+        await ensure_current_time_tool(self._context.tools)
         usage_tracker = _SopUsageTracker(self._context.model_config.budget_tokens)
         ledger = get_current_ledger()
         execution_id = uuid.uuid4().hex

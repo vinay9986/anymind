@@ -17,6 +17,9 @@ from anymind.agents.base import AgentContext
 from anymind.agents.iot_utils import (
     UsageCounter,
     budget_exhausted,
+    build_conversation_query,
+    ensure_current_time_tool,
+    extract_conversation_messages,
     extract_user_input,
     message_text,
     tool_feedback_from_ledger,
@@ -497,7 +500,12 @@ class _ResearchDirectorRuntime:
     async def ainvoke(
         self, inputs: dict[str, Any], config: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
-        query = extract_user_input(inputs)
+        conversation = extract_conversation_messages(inputs)
+        if conversation and len(conversation) > 1:
+            query = build_conversation_query(conversation)
+        else:
+            query = extract_user_input(inputs)
+        await ensure_current_time_tool(self._context.tools)
         usage_counter = UsageCounter()
         probe_history: list[ProbeResult] = []
         feedback = ""

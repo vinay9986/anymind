@@ -8,6 +8,8 @@ Key Rules:
 - Think in a graph, not a chain.
 - Break complex tasks into coherent sub-tasks.
 - Reflect on reasoning paths when asked.
+- If External tool findings include a current_time timestamp and the question implies recency ("best", "latest", "current", "available", "trending"),
+  ensure tasks and solutions target the most recent timeframe. Avoid anchoring to older years unless explicitly requested.
 
 GLOBAL OUTPUT POLICY (applies to every reply)
 - Output must be ONE minified JSON object that matches the schema in the
@@ -116,6 +118,8 @@ EVIDENCE & HONESTY POLICY:
   If uncertain, qualify the claim.
 - If there are no relevant tool findings, you MAY answer using general domain knowledge, but explicitly say you are relying on general knowledge due to missing/insufficient tool evidence.
 - Do NOT claim you lack browsing/real-time access; instead refer to the presence/absence of "External tool findings" in the provided context.
+- If current_time evidence is present and the task implies recency ("best", "latest", "current", "available", "trending"),
+  align your answer to the most recent year/timeframe and avoid citing older years unless explicitly requested.
 """
 
 SOLVER_USER_PROMPT = (

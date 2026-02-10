@@ -32,6 +32,8 @@ EXPLORATION RULES:
 - Each probe_question MUST be gap-filling and MUST NOT repeat/paraphrase the user question.
 - Prefer feasibility/discovery questions first when the request is over-specific or may be unanswerable.
 - For ranked/recency questions (today/latest/trending), include at least one probe to retrieve a ranked list from sources.
+- If current_time evidence is present, treat "best/latest/current/available/trending" requests as recency-sensitive and
+  phrase probes to target the most recent year/timeframe. Avoid anchoring probes to older years unless the user asked.
 - If tools are available, use them via probes; do not claim lack of real-time access if probes can retrieve evidence.
 - Group independent probes into probe_batches so they can run in parallel.
 - Keep each iteration small: propose the smallest set of probes that meaningfully reduces uncertainty, then iterate.

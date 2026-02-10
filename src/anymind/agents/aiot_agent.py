@@ -21,6 +21,7 @@ from anymind.agents.iot_prompts import (
 from anymind.agents.iot_utils import (
     UsageCounter,
     budget_exhausted,
+    ensure_current_time_tool,
     extract_user_input,
     message_text,
     select_semantic_representative,
@@ -118,6 +119,7 @@ class _AIoTRuntime:
         self, inputs: dict[str, Any], config: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
         query = extract_user_input(inputs)
+        await ensure_current_time_tool(self._context.tools)
         usage_counter = UsageCounter()
         prompt_history = ""
         tool_feedback = tool_feedback_from_ledger()

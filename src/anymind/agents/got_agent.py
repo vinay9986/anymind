@@ -14,6 +14,7 @@ from anymind.agents.got.algorithm import GoTAlgorithm, GoTConfig as GoTAlgorithm
 from anymind.agents.iot_utils import (
     UsageCounter,
     budget_exhausted,
+    ensure_current_time_tool,
     extract_user_input,
     message_text,
     try_load_embedder,
@@ -136,6 +137,7 @@ class _GoTRuntime:
         self._budget_exhausted = False
 
         query = extract_user_input(inputs)
+        await ensure_current_time_tool(self._context.tools)
         self._logger.info(
             "got_start",
             query=query,

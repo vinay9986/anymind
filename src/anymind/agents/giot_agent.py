@@ -23,6 +23,7 @@ from anymind.agents.iot_prompts import (
 from anymind.agents.iot_utils import (
     UsageCounter,
     budget_exhausted,
+    ensure_current_time_tool,
     extract_user_input,
     message_text,
     pairwise_similarities,
@@ -273,6 +274,7 @@ class _GIoTRuntime:
         self, inputs: dict[str, Any], config: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
         query = extract_user_input(inputs)
+        await ensure_current_time_tool(self._context.tools)
         usage_counter = UsageCounter()
         base_thread_id = None
         if config and isinstance(config, dict):

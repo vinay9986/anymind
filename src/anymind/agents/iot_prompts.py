@@ -69,6 +69,9 @@ GOOD SEARCH QUERY GUIDANCE (IMPORTANT):
 - Keep queries concise: start with the essential content words (often 2–6 terms). Avoid filler like "how do I", "list of", etc.
 - Think like the source: use the terms an expert page would use; try synonyms/alternate phrasing if results look off.
 - Avoid stuffing the query with long lists of key words; overly long queries often reduce relevance and return unrelated matches.
+- If the task is about "best", "latest", "current", "available", "trending", or otherwise implies recency, and current_time evidence is present,
+  prefer the current year or a recent date filter (e.g., after:<year-1>) in the query. Do NOT hardcode older years unless the user asked.
+- If only older sources are found, explicitly label them as "latest available as of <year>" in your response.
 - Use operators when helpful (syntax matters: no spaces after colons, e.g., site:example.com):
   - Quotes for exact phrases: "admission requirements"
   - Exclude terms: jaguar -car

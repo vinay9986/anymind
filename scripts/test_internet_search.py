@@ -3,9 +3,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+from pathlib import Path
 
 from anymind.tools.core_tools import internet_search
+
+_ROOT = Path(__file__).resolve().parents[1]
+_ONNX_DIR = _ROOT / "onnx_assets_out"
 
 
 def _parse_args() -> argparse.Namespace:
@@ -25,6 +30,10 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    if _ONNX_DIR.exists():
+        os.environ.setdefault("ONNX_MODEL_PATH", str(_ONNX_DIR / "model.onnx"))
+        os.environ.setdefault("ONNX_TOKENIZER_PATH", str(_ONNX_DIR / "tokenizer.json"))
+
     args = _parse_args()
     try:
         result = internet_search(

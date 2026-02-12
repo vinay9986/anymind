@@ -5,7 +5,6 @@ import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
 
-import structlog
 from langchain_core.messages import BaseMessage
 
 from anymind.runtime.json_parser import parse_json_robust
@@ -16,6 +15,8 @@ from anymind.runtime.validation_prompts import (
     extract_keep_unchanged_fields,
     extract_keep_unchanged_sections,
 )
+
+import structlog
 
 log = structlog.get_logger(__name__)
 
@@ -79,6 +80,12 @@ def _extract_assistant_text(message: Any) -> str:
 async def _call_model(
     model_client: Any, system_prompt: str, user_prompt: str
 ) -> tuple[str, Optional[dict[str, int]]]:
+    model_name = (
+        getattr(model_client, "model_name", None)
+        or getattr(model_client, "model", None)
+        or getattr(model_client, "name", None)
+        or "unknown"
+    )
     message = await model_client.ainvoke(
         [("system", system_prompt), ("user", user_prompt)]
     )

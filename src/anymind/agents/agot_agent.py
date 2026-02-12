@@ -15,12 +15,12 @@ from anymind.agents.agot.mappings import AGoTMappings
 from anymind.agents.base import AgentContext
 from anymind.agents.bedrock_middleware import BedrockToolResultSanitizer
 from anymind.agents.iot_utils import (
-    UsageCounter,
-    budget_exhausted,
     ensure_current_time_tool,
     extract_user_input,
     message_text,
 )
+from anymind.agents.tool_agent_pool import ToolAgentPool
+from anymind.agents.usage_tracker import UsageBudgetTracker
 from anymind.config.schemas import AGoTConfig
 from anymind.runtime.usage import extract_usage_from_messages
 from anymind.runtime.validated_json import (
@@ -49,7 +49,7 @@ class _AGoTRuntime:
             middleware.append(BedrockToolResultSanitizer())
 
         pool_size = max(1, int(self._settings.max_concurrency))
-        self._tool_agents = [
+        agents = [
             create_agent(
                 context.model_client,
                 context.tools,
@@ -59,23 +59,19 @@ class _AGoTRuntime:
             )
             for _ in range(pool_size)
         ]
-        self._agent_queue: asyncio.Queue[int] = asyncio.Queue(maxsize=pool_size)
-        for idx in range(pool_size):
-            self._agent_queue.put_nowait(idx)
+        self._tool_pool = ToolAgentPool(agents)
 
-        self._usage_counter = UsageCounter()
+        self._usage_tracker = UsageBudgetTracker(self._model_name, self._budget_tokens)
         self._budget_exhausted = False
 
     def _apply_usage_list(self, usage_list: list[dict[str, int]]) -> None:
-        self._usage_counter.add_usage_list(usage_list)
-        if not self._budget_exhausted and budget_exhausted(
-            self._usage_counter, self._budget_tokens
-        ):
+        self._usage_tracker.add_usage_list(usage_list)
+        if not self._budget_exhausted and self._usage_tracker.budget_exhausted():
             self._budget_exhausted = True
             self._logger.warning(
                 "agot_budget_exhausted",
-                input_tokens=self._usage_counter.input_tokens,
-                output_tokens=self._usage_counter.output_tokens,
+                input_tokens=self._usage_tracker.input_tokens,
+                output_tokens=self._usage_tracker.output_tokens,
                 budget_tokens=self._budget_tokens,
             )
 
@@ -103,16 +99,15 @@ class _AGoTRuntime:
         user_prompt: str,
         config: Optional[dict[str, Any]],
     ) -> tuple[str, Optional[dict[str, int]]]:
-        idx = await self._agent_queue.get()
-        try:
-            run_config: dict[str, Any] = {}
-            if config:
-                run_config = dict(config)
-            cfg = dict(run_config.get("configurable", {}))
-            cfg["thread_id"] = f"agot-worker-{uuid.uuid4().hex}"
-            run_config["configurable"] = cfg
+        run_config: dict[str, Any] = {}
+        if config:
+            run_config = dict(config)
+        cfg = dict(run_config.get("configurable", {}))
+        cfg["thread_id"] = f"agot-worker-{uuid.uuid4().hex}"
+        run_config["configurable"] = cfg
 
-            result = await self._tool_agents[idx].ainvoke(
+        async with self._tool_pool.acquire() as agent:
+            result = await agent.ainvoke(
                 {"messages": [("user", user_prompt)]}, config=run_config
             )
             messages = result.get("messages", [])
@@ -127,8 +122,6 @@ class _AGoTRuntime:
             if totals.input_tokens or totals.output_tokens:
                 return response_text, usage
             return response_text, None
-        finally:
-            self._agent_queue.put_nowait(idx)
 
     async def _run_planner_json(
         self,
@@ -179,7 +172,7 @@ class _AGoTRuntime:
     async def ainvoke(
         self, inputs: dict[str, Any], config: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
-        self._usage_counter = UsageCounter()
+        self._usage_tracker = UsageBudgetTracker(self._model_name, self._budget_tokens)
         self._budget_exhausted = False
 
         query = extract_user_input(inputs)
@@ -240,12 +233,7 @@ class _AGoTRuntime:
         )
 
         answer, graph = await algorithm.solve(query)
-        usage_metadata = {
-            self._model_name: {
-                "input_tokens": self._usage_counter.input_tokens,
-                "output_tokens": self._usage_counter.output_tokens,
-            }
-        }
+        usage_metadata = self._usage_tracker.usage_metadata()
         self._logger.info(
             "agot_complete",
             budget_exhausted=self._budget_exhausted,

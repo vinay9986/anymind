@@ -5,6 +5,7 @@ import os
 import json
 from typing import Any, Dict, List, Optional
 
+import structlog
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest, MCPToolCallResult
 from langchain_core.messages import ToolMessage
@@ -12,6 +13,9 @@ from langchain_core.messages import ToolMessage
 from anymind.config.schemas import MCPConfig
 from anymind.runtime.evidence import get_current_ledger
 from anymind.runtime.cache import CacheBackend
+import time
+
+logger = structlog.get_logger(__name__)
 
 _MCP_ENV_ALLOWLIST = {
     "GOOGLE_CSE_API_KEY",
@@ -34,8 +38,6 @@ _MCP_ENV_ALLOWLIST = {
     "KAGI_API_KEY_CACHE_TTL_SECONDS",
     "AGENT_DATA_BUCKET",
     "AGENT_DATA_BASE_PREFIX",
-    "BEDROCK_KNOWLEDGE_BASE_ID",
-    "BEDROCK_KNOWLEDGE_BASE_MODEL_ARN",
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
     "AWS_SESSION_TOKEN",
@@ -49,6 +51,9 @@ _MCP_ENV_ALLOWLIST = {
     "PDF_ONNX_MODEL_PATH",
     "PDF_ONNX_TOKENIZER_PATH",
     "PDF_ONNX_MAX_LENGTH",
+    "ANYMIND_LOG_PATH",
+    "ANYMIND_LOG_LEVEL",
+    "ANYMIND_LOG_DIR",
 }
 
 _MCP_ENV_PATH_KEYS = {
@@ -122,79 +127,54 @@ def resolve_mcp_config(raw: MCPConfig, base_dir: Path) -> Dict[str, Any]:
     return resolved
 
 
-def _preferred_json_text(payload: Any) -> str | None:
-    if not isinstance(payload, dict):
-        return None
-    for key in ("concat_blob", "answer", "text", "content", "summary", "result"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    matches = payload.get("matches")
-    if isinstance(matches, list):
-        texts: list[str] = []
-        for match in matches:
-            if not isinstance(match, dict):
-                continue
-            snippet = match.get("text") or match.get("snippet")
-            if isinstance(snippet, str) and snippet.strip():
-                texts.append(snippet.strip())
-        if texts:
-            return "\n".join(texts)
-    return None
-
-
 def tool_result_to_text(result: MCPToolCallResult) -> str:
-    def _serialize_item(item: Any) -> str:
+    def _normalize_item(item: Any) -> Any:
         if isinstance(item, dict):
-            item_type = item.get("type")
-            if item_type == "text":
-                return str(item.get("text", ""))
-            if item_type == "json":
-                payload = item.get("json")
-                preferred = _preferred_json_text(payload)
-                if preferred:
-                    return preferred
-                try:
-                    return json.dumps(payload, ensure_ascii=False)
-                except Exception:
-                    return str(payload)
-            if "text" in item:
-                return str(item.get("text", ""))
-            if "json" in item:
-                payload = item.get("json")
-                preferred = _preferred_json_text(payload)
-                if preferred:
-                    return preferred
-                try:
-                    return json.dumps(payload, ensure_ascii=False)
-                except Exception:
-                    return str(payload)
-            try:
-                return json.dumps(item, ensure_ascii=False)
-            except Exception:
-                return str(item)
+            return item
         item_type = getattr(item, "type", None)
-        if item_type == "text":
-            return str(getattr(item, "text", ""))
-        if item_type == "json":
-            payload = getattr(item, "json", None)
-            try:
-                return json.dumps(payload, ensure_ascii=False)
-            except Exception:
-                return str(payload)
+        if item_type is not None:
+            normalized: dict[str, Any] = {"type": item_type}
+            if hasattr(item, "text"):
+                normalized["text"] = getattr(item, "text", None)
+            if hasattr(item, "json"):
+                normalized["json"] = getattr(item, "json", None)
+            if hasattr(item, "data"):
+                normalized["data"] = getattr(item, "data", None)
+            return normalized
         return str(item)
 
     if isinstance(result, ToolMessage):
         content = result.content
         if isinstance(content, list):
-            parts = [_serialize_item(item) for item in content]
-            return "\n".join(part for part in parts if part).strip()
+            if all(
+                isinstance(item, dict) and item.get("type") == "text"
+                for item in content
+            ):
+                parts = [
+                    str(item.get("text", ""))
+                    for item in content
+                    if item.get("text") is not None
+                ]
+                return "\n".join(part for part in parts if part).strip()
+            payload = [_normalize_item(item) for item in content]
+            try:
+                return json.dumps(payload, ensure_ascii=False, default=str)
+            except Exception:
+                return "\n".join(str(item) for item in payload).strip()
+        if isinstance(content, dict):
+            try:
+                return json.dumps(content, ensure_ascii=False, default=str)
+            except Exception:
+                return str(content).strip()
         return str(content).strip()
 
-    text_parts = []
+    payload = []
     for item in result.content:
-        text_parts.append(_serialize_item(item))
-    return "\n".join(part for part in text_parts if part).strip()
+        payload.append(_normalize_item(item))
+    try:
+        return json.dumps(payload, ensure_ascii=False, default=str)
+    except Exception:
+        return "\n".join(str(item) for item in payload).strip()
 
 
 def _is_text_only_result(result: MCPToolCallResult) -> bool:
@@ -280,6 +260,58 @@ async def confirm_tool_interceptor(
             content="Tool call denied by user.", tool_call_id=str(tool_call_id)
         )
     return await handler(request)
+
+
+async def tool_error_logging_interceptor(
+    request: MCPToolCallRequest, handler
+) -> MCPToolCallResult:
+    try:
+        return await handler(request)
+    except Exception:
+        tool_call_id = getattr(request.runtime, "tool_call_id", None)
+        logger.exception(
+            "tool_call_failed",
+            tool=request.name,
+            args=request.args,
+            tool_call_id=tool_call_id,
+        )
+        raise
+
+
+async def tool_call_logging_interceptor(
+    request: MCPToolCallRequest, handler
+) -> MCPToolCallResult:
+    tool_call_id = getattr(request.runtime, "tool_call_id", None)
+    logger.info(
+        "tool_call_start",
+        tool=request.name,
+        args=request.args,
+        tool_call_id=tool_call_id,
+    )
+    start_time = time.perf_counter()
+    try:
+        result = await handler(request)
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - start_time) * 1000.0
+        logger.exception(
+            "tool_call_error",
+            tool=request.name,
+            args=request.args,
+            tool_call_id=tool_call_id,
+            duration_ms=duration_ms,
+            error=str(exc),
+        )
+        raise
+    duration_ms = (time.perf_counter() - start_time) * 1000.0
+    logger.info(
+        "tool_call_result",
+        tool=request.name,
+        args=request.args,
+        tool_call_id=tool_call_id,
+        duration_ms=duration_ms,
+        result=tool_result_to_text(result),
+    )
+    return result
 
 
 class MCPToolRegistry:

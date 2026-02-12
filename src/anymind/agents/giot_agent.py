@@ -26,6 +26,7 @@ from anymind.agents.iot_utils import (
     ensure_current_time_tool,
     extract_user_input,
     message_text,
+    _format_tool_catalog,
     pairwise_similarities,
     select_semantic_representative,
     truncate_text,
@@ -150,12 +151,14 @@ class _GIoTRuntime:
         tool_feedback = str(
             state.get("tool_scratchpad", "No external tool results yet.")
         ).strip()
+        worker_tools_configuration = _format_tool_catalog(self._context.tools)
 
         brain_user = BRAIN_USER_PROMPT.format(
             prompt_history=state.get("prompt_history", ""),
             iteration=iteration,
             query=query,
             tool_feedback=tool_feedback,
+            worker_tools_configuration=worker_tools_configuration,
         )
         brain_result = await generate_validated_json(
             role_name=f"brain_agent_{agent_id}",

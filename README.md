@@ -96,6 +96,7 @@ The default MCP server exposes these tools:
 
 - `current_time(format="iso"|"unix", timezone="UTC")`
 - `internet_search(query, max_results=5, max_snippets=3, ...)` (Google CSE + Scrapfly)
+- `pdf_extract_text(url|s3_key|pdf_base64, query|queries, search_mode="auto", ...)`
 
 ### Tool configuration (env)
 
@@ -107,10 +108,6 @@ The default MCP server exposes these tools:
   - `SCRAPFLY_API_KEY` (or `SCRAPFLY_API_KEY_SECRET_ARN`)
 - PDF from S3:
   - `AGENT_DATA_BUCKET` (optional: `AGENT_DATA_BASE_PREFIX`)
-- Bedrock KB:
-  - `BEDROCK_KNOWLEDGE_BASE_ID`, `BEDROCK_KNOWLEDGE_BASE_MODEL_ARN`
-  - plus AWS creds (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` or `AWS_PROFILE`)
-
 Semantic search for PDFs/pages is enabled by default. Set ONNX asset paths if you want
 semantic search enabled:
 `PDF_ONNX_MODEL_PATH`, `PDF_ONNX_TOKENIZER_PATH`, `PDF_ONNX_MAX_LENGTH`.

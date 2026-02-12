@@ -20,7 +20,9 @@ from anymind.agents.iot_utils import (
 )
 from anymind.config.schemas import SopConfig
 from anymind.runtime.evidence import get_current_ledger
-from anymind.runtime.usage import UsageTotals, normalize_usage_metadata
+from anymind.runtime.usage import normalize_usage_metadata
+from anymind.agents.usage_tracker import UsageBudgetTracker
+from anymind.runtime.tool_selection import select_tools_for_policy
 from anymind.agents.sop.sop_executor import SopExecutionConfig, execute_sop
 from anymind.agents.sop.sop_optimizer import optimize_sop
 from anymind.agents.sop.sop_validation import get_optimize_flag, validate_sop_structure
@@ -32,50 +34,6 @@ class SopAgent:
 
     def build(self, context: AgentContext) -> Any:
         return _SopRuntime(context)
-
-
-class _SopUsageTracker:
-    def __init__(self, budget_tokens: Optional[int]) -> None:
-        self._budget_tokens = budget_tokens
-        self._totals_by_model: dict[str, UsageTotals] = {}
-
-    def add_usage_metadata(
-        self, usage_metadata: dict[str, dict[str, int]] | None
-    ) -> None:
-        if not usage_metadata:
-            return
-        for model_name, usage in usage_metadata.items():
-            totals = self._totals_by_model.setdefault(model_name, UsageTotals())
-            input_tokens = usage.get("input_tokens", usage.get("prompt_tokens", 0))
-            output_tokens = usage.get(
-                "output_tokens", usage.get("completion_tokens", 0)
-            )
-            totals.add(input_tokens, output_tokens)
-
-    def total_tokens(self) -> int:
-        return sum(
-            t.input_tokens + t.output_tokens for t in self._totals_by_model.values()
-        )
-
-    def budget_exhausted(self) -> bool:
-        if self._budget_tokens is None:
-            return False
-        return self.total_tokens() >= int(self._budget_tokens)
-
-    def remaining_budget(self) -> Optional[int]:
-        if self._budget_tokens is None:
-            return None
-        remaining = int(self._budget_tokens) - self.total_tokens()
-        return max(0, remaining)
-
-    def usage_metadata(self) -> dict[str, dict[str, int]]:
-        return {
-            model: {
-                "input_tokens": totals.input_tokens,
-                "output_tokens": totals.output_tokens,
-            }
-            for model, totals in self._totals_by_model.items()
-        }
 
 
 class _SopRuntime:
@@ -107,31 +65,22 @@ class _SopRuntime:
         return data
 
     async def _select_tools(
-        self, *, user_input: str, usage_tracker: _SopUsageTracker
+        self, *, user_input: str, usage_tracker: UsageBudgetTracker
     ) -> list[Any]:
         tools = list(self._context.tools or [])
         if not tools:
             return []
 
         policy = self._context.tool_policy
-        if policy.name == "never":
-            return []
-
-        if policy.name == "planner":
-            selections, usage = await policy.select_tools(
-                user_input=user_input,
-                tools=tools,
-                model_client=self._context.model_client,
-                model_name=self._context.model_config.model,
-            )
-            usage_tracker.add_usage_metadata(usage)
-            if selections:
-                return [
-                    tool for tool in tools if getattr(tool, "name", "") in selections
-                ]
-            return []
-
-        return tools
+        selected, usage = await select_tools_for_policy(
+            policy=policy,
+            tools=tools,
+            user_input=user_input,
+            model_client=self._context.model_client,
+            model_name=self._context.model_config.model,
+        )
+        usage_tracker.add_usage_metadata(usage)
+        return selected
 
     def _get_agent_runtime(
         self,
@@ -172,7 +121,7 @@ class _SopRuntime:
         return runtime
 
     async def _solve(
-        self, algorithm: str, query: str, usage_tracker: _SopUsageTracker
+        self, algorithm: str, query: str, usage_tracker: UsageBudgetTracker
     ) -> tuple[str, dict[str, dict[str, int]] | None, list[Any]]:
         tools = await self._select_tools(user_input=query, usage_tracker=usage_tracker)
         runtime = self._get_agent_runtime(
@@ -195,7 +144,10 @@ class _SopRuntime:
     ) -> dict[str, Any]:
         query = extract_user_input(inputs)
         await ensure_current_time_tool(self._context.tools)
-        usage_tracker = _SopUsageTracker(self._context.model_config.budget_tokens)
+        usage_tracker = UsageBudgetTracker(
+            self._context.model_config.model,
+            self._context.model_config.budget_tokens,
+        )
         ledger = get_current_ledger()
         execution_id = uuid.uuid4().hex
 

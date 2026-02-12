@@ -66,7 +66,7 @@ class DummyResult:
         self.content = content
 
 
-def test_tool_result_to_text_prefers_concat_blob() -> None:
+def test_tool_result_to_text_preserves_concat_blob_payload() -> None:
     result = DummyResult(
         [
             {
@@ -75,10 +75,12 @@ def test_tool_result_to_text_prefers_concat_blob() -> None:
             }
         ]
     )
-    assert tool_result_to_text(result) == "blob"
+    text = tool_result_to_text(result)
+    assert '"concat_blob"' in text
+    assert "blob" in text
 
 
-def test_tool_result_to_text_uses_matches() -> None:
+def test_tool_result_to_text_preserves_matches_payload() -> None:
     result = DummyResult(
         [
             {
@@ -92,7 +94,9 @@ def test_tool_result_to_text_uses_matches() -> None:
             }
         ]
     )
-    assert tool_result_to_text(result) == "alpha\nbeta"
+    text = tool_result_to_text(result)
+    assert "alpha" in text
+    assert "beta" in text
 
 
 def test_tool_result_to_text_handles_json_payload() -> None:

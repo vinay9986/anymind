@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+import os
 import uuid
 
 from fastapi import FastAPI, HTTPException
@@ -8,7 +9,9 @@ from pydantic import BaseModel
 
 from anymind.runtime.logging import configure_logging
 from anymind.runtime.jobs import Job, JobManager, JobStatus
-from anymind.runtime.orchestrator import BudgetExceededError, Orchestrator, Session
+from anymind.runtime.orchestrator import BudgetExceededError, Orchestrator
+from anymind.runtime.session_factory import SessionFactory
+from anymind.runtime.session_store import SessionStore
 
 
 class ChatRequest(BaseModel):
@@ -38,31 +41,31 @@ class JobStatusResponse(BaseModel):
 
 
 def create_app() -> FastAPI:
-    configure_logging("INFO")
     app = FastAPI(title="AnyMind API", version="0.1.0")
 
-    orchestrator = Orchestrator()
-    session_holder: dict[str, Session] = {}
+    session_factory = SessionFactory()
+    orchestrator = Orchestrator(session_factory=session_factory)
+    session_store = SessionStore(session_factory=session_factory)
     job_manager = JobManager()
+    log_path = os.getenv("ANYMIND_LOG_PATH")
+
+    def _configure_request_logging(thread_id: str) -> None:
+        configure_logging("INFO", log_path=log_path, run_id=thread_id)
 
     @app.get("/health")
     async def health() -> dict:
         return {"status": "ok"}
 
-    async def _get_session(agent_name: str) -> Session:
-        if agent_name in session_holder:
-            return session_holder[agent_name]
-        session = await orchestrator.create_session(agent_name=agent_name)
-        session_holder[agent_name] = session
-        return session
-
     @app.post("/agents/run", response_model=ChatResponse)
     async def run_agent(payload: ChatRequest) -> ChatResponse:
+        thread_id = payload.thread_id or f"{payload.agent}-{uuid.uuid4().hex}"
+        _configure_request_logging(thread_id)
         try:
-            session = await _get_session(payload.agent)
+            session = await session_store.get(
+                agent_name=payload.agent, thread_id=thread_id
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        thread_id = payload.thread_id or f"{payload.agent}-{uuid.uuid4().hex}"
         try:
             result = await orchestrator.run_turn(
                 session, user_input=payload.message, thread_id=thread_id
@@ -79,13 +82,17 @@ def create_app() -> FastAPI:
 
     @app.post("/jobs", response_model=JobResponse)
     async def run_agent_async(payload: ChatRequest) -> JobResponse:
+        thread_id = payload.thread_id or f"{payload.agent}-{uuid.uuid4().hex}"
+        _configure_request_logging(thread_id)
         try:
-            session = await _get_session(payload.agent)
+            session = await session_store.get(
+                agent_name=payload.agent, thread_id=thread_id
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        thread_id = payload.thread_id or f"{payload.agent}-{uuid.uuid4().hex}"
 
         async def _runner(job: Job):
+            _configure_request_logging(thread_id)
             result = await orchestrator.run_turn(
                 session,
                 user_input=payload.message,
@@ -145,7 +152,6 @@ def create_app() -> FastAPI:
     async def shutdown() -> None:
         for job in job_manager.list().values():
             job_manager.cancel(job.id)
-        for session in session_holder.values():
-            await session.close()
+        await session_store.close_all()
 
     return app

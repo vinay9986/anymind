@@ -26,6 +26,9 @@ BRAIN_USER_PROMPT = """History:
 External tool findings:
 {tool_feedback}
 
+Worker tools configuration:
+{worker_tools_configuration}
+
 Current iteration: {iteration}
 Original query: {query}
 

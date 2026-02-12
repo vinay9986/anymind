@@ -11,15 +11,10 @@ import numpy as np
 from langchain_core.messages import BaseMessage
 
 from anymind.runtime.evidence import get_current_ledger
+from anymind.runtime.tool_validation import require_tool_description
+from anymind.runtime.messages import message_text
 from anymind.runtime.onnx_embedder import OnnxEmbedderConfig, OnnxSentenceEmbedder
 from anymind.runtime.usage import UsageTotals, extract_usage_from_messages
-
-
-def message_text(message: BaseMessage) -> str:
-    content = getattr(message, "content", "")
-    if isinstance(content, list):
-        return "\n".join(str(part) for part in content)
-    return str(content)
 
 
 def extract_user_input(payload: dict[str, Any]) -> str:
@@ -151,32 +146,79 @@ def budget_exhausted(counter: UsageCounter, budget_tokens: Optional[int]) -> boo
     return counter.total_tokens >= int(budget_tokens)
 
 
-def tool_feedback_from_ledger(max_chars: int = 8000) -> str:
+def _tool_display_name(tool: Any) -> str:
+    for attr in ("name", "tool_name", "__name__"):
+        value = getattr(tool, attr, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _tool_description(tool: Any) -> str:
+    return require_tool_description(tool, context="tool_feedback")
+
+
+def _format_tool_catalog(
+    tools: Iterable[Any] | None,
+    *,
+    max_chars: int | None = None,
+    max_desc_chars: int | None = None,
+) -> str:
+    if not tools:
+        return ""
+    blocks: list[str] = []
+    total = 0
+    for tool in tools:
+        name = _tool_display_name(tool)
+        if not name:
+            continue
+        desc = _tool_description(tool)
+        normalized = (
+            "\n".join(line.rstrip() for line in desc.splitlines()).strip()
+            if desc
+            else ""
+        )
+        if max_desc_chars is not None:
+            normalized = truncate_text(normalized, max_desc_chars)
+        if "\n" in normalized:
+            detail = "\n".join(f"  {line}" for line in normalized.splitlines())
+            block = f"- {name}:\n{detail}"
+        else:
+            block = f"- {name}: {normalized}"
+        addition = len(block) + (1 if blocks else 0)
+        if max_chars is not None and total + addition > max_chars:
+            remaining = max_chars - total
+            if remaining > 0:
+                blocks.append(block[:remaining].rstrip())
+            break
+        blocks.append(block)
+        total += addition
+    if not blocks:
+        return ""
+    return "Tool catalog:\n" + "\n".join(blocks)
+
+
+def tool_feedback_from_ledger(
+    tools: Iterable[Any] | None = None, max_chars: int | None = None
+) -> str:
+    tool_catalog = _format_tool_catalog(tools)
+    tool_label = tool_catalog or "Tools are available."
+
     ledger = get_current_ledger()
     if ledger is None:
-        return "Tools are available. No external tool results yet."
+        return f"{tool_label} No external tool results yet."
     records = ledger.recent()
     if not records:
-        return "Tools are available. No external tool results yet."
-    max_chars = int(max_chars or 0)
-    if max_chars <= 0:
-        max_chars = 8000
+        return f"{tool_label} No external tool results yet."
     parts: list[str] = []
-    total = 0
     for record in records:
         content = str(record.content or "").strip()
         if not content:
             continue
         block = f"[{record.id}] {record.tool}: {content}"
-        if total + len(block) > max_chars:
-            remaining = max_chars - total
-            if remaining > 0:
-                parts.append(block[:remaining].rstrip())
-            break
         parts.append(block)
-        total += len(block)
     summary = "\n".join(parts).strip()
-    return summary or "Tools are available. No external tool results yet."
+    return summary or f"{tool_label} No external tool results yet."
 
 
 def truncate_text(text: str, max_chars: int) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -21,21 +22,37 @@ app = typer.Typer(add_completion=False, invoke_without_command=True)
 console = Console()
 
 
+def _truncate_text(text: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    return f"{text[: max_chars - 3]}..."
+
+
 def _format_evidence(evidence: list[dict[str, object]]) -> str:
+    max_total = int(os.getenv("ANYMIND_EVIDENCE_MAX_CHARS", "8000"))
+    max_item = int(os.getenv("ANYMIND_EVIDENCE_ITEM_MAX_CHARS", "2000"))
     lines: list[str] = []
+    total = 0
     for record in evidence:
         record_id = str(record.get("id", "")).strip()
         tool = str(record.get("tool", "")).strip()
-        content = str(record.get("content", "")).strip().replace("\n", " ")
-        if len(content) > 300:
-            content = content[:297] + "..."
+        content = str(record.get("content", "")).strip()
+        if max_item > 0:
+            content = _truncate_text(content, max_item)
         label = f"[{record_id}] {tool}".strip()
         if label == "[]":
             label = "[evidence]"
-        if content:
-            lines.append(f"{label}: {content}")
-        else:
-            lines.append(label)
+        line = f"{label}: {content}" if content else label
+        addition = len(line) + (1 if lines else 0)
+        if max_total > 0 and total + addition > max_total:
+            remaining = max_total - total
+            if remaining > 0:
+                lines.append(_truncate_text(line, remaining))
+            break
+        lines.append(line)
+        total += addition
     return "\n".join(lines)
 
 
@@ -52,7 +69,12 @@ def _run_chat(
     log_level: str,
     query: Optional[str],
 ) -> None:
-    configure_logging(log_level)
+    active_thread_id = thread_id or f"{agent}-{uuid.uuid4().hex}"
+    configure_logging(
+        log_level,
+        log_path=os.getenv("ANYMIND_LOG_PATH"),
+        run_id=active_thread_id,
+    )
 
     async def _run() -> None:
         orchestrator = Orchestrator()
@@ -72,7 +94,6 @@ def _run_chat(
         session = await orchestrator.create_session(
             agent_name=agent, model_config=model_config
         )
-        active_thread_id = thread_id or f"{agent}-{uuid.uuid4().hex}"
         try:
             if query:
                 try:

@@ -7,7 +7,9 @@ from typing import Any, Dict, List, Protocol, Sequence, Tuple
 
 from langchain_core.messages import BaseMessage
 
+from anymind.runtime.messages import message_text
 from anymind.runtime.usage import normalize_usage_metadata
+from anymind.runtime.tool_validation import require_tool_description
 
 
 class ToolPolicy(Protocol):
@@ -111,8 +113,8 @@ class PlannerToolPolicy:
             [("system", self._system_prompt), ("user", prompt)]
         )
         usage_metadata = normalize_usage_metadata(model_name, [message])
-
-        selections = _parse_tool_plan(_message_text(message), tool_names)
+        raw_output = message_text(message)
+        selections = _parse_tool_plan(raw_output, tool_names)
         if selections:
             return selections, usage_metadata
 
@@ -123,7 +125,7 @@ def _tool_catalog(tools: Sequence[Any]) -> str:
     payload = []
     for tool in tools:
         name = getattr(tool, "name", None) or getattr(tool, "__name__", "unknown")
-        description = getattr(tool, "description", "") or ""
+        description = require_tool_description(tool, context="tool_policy")
         parameters: dict[str, Any] = {}
         args_schema = getattr(tool, "args_schema", None)
         if args_schema is not None:
@@ -179,13 +181,6 @@ def _parse_tool_plan(text: str, tool_names: set[str]) -> List[str]:
             if name and name in tool_names:
                 selected.append(name)
     return selected
-
-
-def _message_text(message: BaseMessage) -> str:
-    content = getattr(message, "content", "")
-    if isinstance(content, list):
-        return "\n".join(str(part) for part in content)
-    return str(content)
 
 
 def _is_greeting(text: str) -> bool:

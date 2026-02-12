@@ -43,18 +43,14 @@ class EvidenceLedger:
         return list(self._records)
 
     @staticmethod
-    def summarize(records: Iterable[EvidenceRecord], max_chars: int = 2000) -> str:
+    def summarize(
+        records: Iterable[EvidenceRecord], max_chars: int | None = None
+    ) -> str:
         lines: List[str] = []
-        total = 0
         for record in records:
-            snippet = record.content.strip().replace("\n", " ")
-            if len(snippet) > 300:
-                snippet = snippet[:297] + "..."
-            line = f"[{record.id}] {record.tool}: {snippet}"
-            if total + len(line) > max_chars:
-                break
+            content = record.content.strip()
+            line = f"[{record.id}] {record.tool}: {content}"
             lines.append(line)
-            total += len(line)
         return "\n".join(lines)
 
 

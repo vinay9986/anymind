@@ -24,6 +24,7 @@ from anymind.agents.iot_utils import (
     ensure_current_time_tool,
     extract_user_input,
     message_text,
+    _format_tool_catalog,
     select_semantic_representative,
     truncate_text,
     tool_feedback_from_ledger,
@@ -123,6 +124,7 @@ class _AIoTRuntime:
         usage_counter = UsageCounter()
         prompt_history = ""
         tool_feedback = tool_feedback_from_ledger()
+        worker_tools_configuration = _format_tool_catalog(self._context.tools)
         iteration = 1
         last_worker_response = ""
         final_response: Optional[str] = None
@@ -191,6 +193,7 @@ class _AIoTRuntime:
                 iteration=iteration,
                 query=query,
                 tool_feedback=tool_feedback,
+                worker_tools_configuration=worker_tools_configuration,
             )
             self._logger.info("aiot_brain_start", iteration=iteration)
             brain_result = await generate_validated_json(

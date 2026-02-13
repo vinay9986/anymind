@@ -5,7 +5,6 @@ from typing import Any
 from anymind.runtime.json_validation import JSONStructureValidator
 from anymind.runtime.validated_json import generate_validated_json
 
-
 _COVERAGE_GATE_SYSTEM_PROMPT = (
     "You are a strict evaluator. Score whether an answer fully addresses the question.\n"
     "Return ONLY minified JSON with the required fields."

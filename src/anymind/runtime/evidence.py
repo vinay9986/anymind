@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import contextlib
+import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable, List
@@ -51,7 +53,56 @@ class EvidenceLedger:
             content = record.content.strip()
             line = f"[{record.id}] {record.tool}: {content}"
             lines.append(line)
-        return "\n".join(lines)
+        summary = "\n".join(lines)
+        if max_chars is None or max_chars <= 0:
+            return summary
+        if max_chars <= 3:
+            return "..."[:max_chars]
+        if len(summary) <= max_chars - 3:
+            return f"{summary}..."
+        return f"{summary[: max_chars - 3]}..."
+
+
+def summarize_for_display(record: EvidenceRecord) -> str:
+    content = (record.content or "").strip()
+    if not content:
+        return ""
+
+    def _extract_value(data: Any) -> str:
+        if isinstance(data, dict):
+            if "timestamp" in data:
+                return str(data.get("timestamp", "")).strip()
+            if "url" in data:
+                return str(data.get("url", "")).strip()
+            results = data.get("results")
+            if isinstance(results, list):
+                for item in results:
+                    value = _extract_value(item)
+                    if value:
+                        return value
+        if isinstance(data, list):
+            for item in data:
+                value = _extract_value(item)
+                if value:
+                    return value
+        return ""
+
+    try:
+        data = json.loads(content)
+    except Exception:
+        data = None
+
+    extracted = _extract_value(data) if data is not None else ""
+    if extracted:
+        return extracted
+
+    ts_match = re.search(r"\d{4}-\d{2}-\d{2}T[0-9:.+-]+Z?", content)
+    if ts_match:
+        return ts_match.group(0)
+    url_match = re.search(r"https?://[^\s\"']+", content)
+    if url_match:
+        return url_match.group(0)
+    return ""
 
 
 _CURRENT_LEDGER: ContextVar[EvidenceLedger | None] = ContextVar(

@@ -545,7 +545,9 @@ class GoTAlgorithm:
             return 0.0
         sampled = siblings
         if len(sampled) > self.cfg.max_diversity_samples:
-            sampled = random.sample(sampled, self.cfg.max_diversity_samples)
+            sampled = random.sample(  # nosec B311 - not used for security/crypto
+                sampled, self.cfg.max_diversity_samples
+            )
         texts = [node.content] + [s.content for s in sampled]
         vectors = self._embed_many(texts)
         node_vec = vectors[0]

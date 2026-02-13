@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from anymind.agents.base import AgentContext
 from anymind.policies.tool_policy import resolve_tool_policy
 from anymind.runtime.citations import render_with_citations
-from anymind.runtime.evidence import use_ledger
+from anymind.runtime.evidence import summarize_for_display, use_ledger
 from anymind.runtime.messages import message_text
 from anymind.runtime.session import Session
 from anymind.runtime.session_usage import (
@@ -143,7 +143,7 @@ class TurnRunner:
                         "id": record.id,
                         "tool": record.tool,
                         "args": record.args,
-                        "content": record.content,
+                        "content": summarize_for_display(record),
                     }
                     for record in evidence_records
                 ],

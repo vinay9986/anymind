@@ -171,18 +171,12 @@ def _run_chat(
                 table.add_column("Input Tokens")
                 table.add_column("Output Tokens")
                 table.add_column("Total Tokens")
-                table.add_column(f"Input Cost ({summary['currency']})")
-                table.add_column(f"Output Cost ({summary['currency']})")
-                table.add_column(f"Total Cost ({summary['currency']})")
                 for model_name, totals in summary["models"].items():
                     table.add_row(
                         model_name,
                         str(totals["input_tokens"]),
                         str(totals["output_tokens"]),
                         str(totals["total_tokens"]),
-                        f"{totals['input_cost']:.6f}",
-                        f"{totals['output_cost']:.6f}",
-                        f"{totals['total_cost']:.6f}",
                     )
                 overall = summary["total"]
                 table.add_row(
@@ -190,9 +184,6 @@ def _run_chat(
                     str(overall["input_tokens"]),
                     str(overall["output_tokens"]),
                     str(overall["total_tokens"]),
-                    f"{overall['input_cost']:.6f}",
-                    f"{overall['output_cost']:.6f}",
-                    f"{overall['total_cost']:.6f}",
                 )
                 console.print(table)
             else:

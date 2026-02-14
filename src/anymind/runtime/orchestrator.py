@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from anymind.config.schemas import MCPConfig, ModelConfig, PricingConfig
+from anymind.config.schemas import MCPConfig, ModelConfig
 from anymind.runtime.session import Session
 from anymind.runtime.session_factory import SessionFactory
 from anymind.runtime.session_usage import session_summary
@@ -24,13 +24,11 @@ class Orchestrator:
         *,
         agent_name: str,
         model_config: Optional[ModelConfig] = None,
-        pricing_config: Optional[PricingConfig] = None,
         mcp_config: Optional[MCPConfig] = None,
     ) -> Session:
         return await self._session_factory.create_session(
             agent_name=agent_name,
             model_config=model_config,
-            pricing_config=pricing_config,
             mcp_config=mcp_config,
         )
 

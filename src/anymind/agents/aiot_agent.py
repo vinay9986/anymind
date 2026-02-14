@@ -32,7 +32,8 @@ from anymind.agents.iot_utils import (
 )
 from anymind.config.schemas import AIoTConfig
 from anymind.runtime.json_validation import JSONStructureValidator
-from anymind.runtime.usage import normalize_usage_metadata
+from anymind.runtime.session_context import get_session_id
+from anymind.runtime.usage_store import get_usage_store
 from anymind.runtime.validated_json import (
     ValidatedJsonResult,
     generate_validated_json,
@@ -75,13 +76,8 @@ class _AIoTRuntime:
         messages = result.get("messages", [])
         if not messages:
             return "", None
-        response_text = message_text(messages[-1])
-        usage = normalize_usage_metadata(self._model_name, messages)
-        usage_entry = usage.get(self._model_name)
-        if usage_entry and (
-            usage_entry.get("input_tokens") or usage_entry.get("output_tokens")
-        ):
-            return response_text, usage_entry
+        last_message = messages[-1]
+        response_text = message_text(last_message)
         return response_text, None
 
     async def _call_fix(
@@ -205,7 +201,7 @@ class _AIoTRuntime:
                 max_reasks=3,
                 original_task_context=f"AIoT brain iteration for query: {query}",
             )
-            usage_counter.add_usage_list(brain_result.usage_metadata)
+            # budget tracking handled via session usage store
             brain_thought = str(brain_result.data.get("self_thought", "") or "")
             brain_payload = {
                 "iteration": iteration,
@@ -232,7 +228,7 @@ class _AIoTRuntime:
                 role_name="worker",
                 task_context=f"AIoT worker iteration for query: {query}",
             )
-            usage_counter.add_usage_list(worker_result.usage_metadata)
+            # budget tracking handled via session usage store
 
             tool_feedback = tool_feedback_from_ledger()
             last_worker_response = str(worker_result.data.get("response", "")).strip()
@@ -319,7 +315,7 @@ class _AIoTRuntime:
                     if response:
                         answers.append(response)
                         explanations.append(explanation)
-                    usage_counter.add_usage_list(usage_list)
+                    # budget tracking handled via session usage store
 
                 counts = Counter([a for a in answers if a])
                 if counts:
@@ -358,12 +354,31 @@ class _AIoTRuntime:
                 final_len=len(final_response or ""),
             )
 
-        usage_metadata = {
-            self._model_name: {
-                "input_tokens": usage_counter.input_tokens,
-                "output_tokens": usage_counter.output_tokens,
+        session_id = get_session_id()
+        if session_id:
+            snapshot = get_usage_store().get(session_id)
+            if snapshot.per_model:
+                usage_metadata = {
+                    model: {
+                        "input_tokens": totals.input_tokens,
+                        "output_tokens": totals.output_tokens,
+                    }
+                    for model, totals in snapshot.per_model.items()
+                }
+            else:
+                usage_metadata = {
+                    self._model_name: {
+                        "input_tokens": snapshot.totals.input_tokens,
+                        "output_tokens": snapshot.totals.output_tokens,
+                    }
+                }
+        else:
+            usage_metadata = {
+                self._model_name: {
+                    "input_tokens": usage_counter.input_tokens,
+                    "output_tokens": usage_counter.output_tokens,
+                }
             }
-        }
         self._logger.info(
             "aiot_complete",
             iterations=iteration,

@@ -5,10 +5,9 @@ import os
 from pathlib import Path
 from typing import Iterable
 
-from anymind.config.schemas import MCPConfig, ModelConfig, PricingConfig
+from anymind.config.schemas import MCPConfig, ModelConfig
 
 MODEL_CONFIG_ENV = "AM_MODEL_CONFIG"
-PRICING_CONFIG_ENV = "AM_PRICING_CONFIG"
 MCP_CONFIG_ENV = "AM_MCP_CONFIG"
 
 BASE_DIR = Path(__file__).resolve().parents[3]
@@ -18,13 +17,6 @@ MODEL_CONFIG_CANDIDATES = [
     Path.cwd() / "config" / "model.json",
     BASE_DIR / "config" / "model.json",
     Path.home() / ".config" / "anymind" / "model.json",
-]
-
-PRICING_CONFIG_CANDIDATES = [
-    Path.cwd() / "pricing.json",
-    Path.cwd() / "config" / "pricing.json",
-    BASE_DIR / "config" / "pricing.json",
-    Path.home() / ".config" / "anymind" / "pricing.json",
 ]
 
 MCP_CONFIG_CANDIDATES = [
@@ -65,12 +57,6 @@ def load_model_config() -> ModelConfig:
 def load_model_config_from_path(path: Path) -> ModelConfig:
     data = _read_json(path)
     return ModelConfig(**data)
-
-
-def load_pricing_config() -> PricingConfig:
-    path = _find_config(PRICING_CONFIG_ENV, PRICING_CONFIG_CANDIDATES)
-    data = _read_json(path)
-    return PricingConfig(**data)
 
 
 def load_mcp_config() -> MCPConfig:

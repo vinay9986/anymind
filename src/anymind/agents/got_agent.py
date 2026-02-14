@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import Any, Optional
 
 import structlog
@@ -20,7 +21,6 @@ from anymind.agents.iot_utils import (
 from anymind.agents.tool_agent_pool import ToolAgentPool
 from anymind.agents.usage_tracker import UsageBudgetTracker
 from anymind.config.schemas import GoTConfig as GoTSettings
-from anymind.runtime.usage import extract_usage_from_messages
 from anymind.runtime.validated_json import generate_validated_json
 
 
@@ -92,14 +92,8 @@ class _GoTRuntime:
             messages = result.get("messages", [])
             if not messages:
                 return "", None
-            response_text = message_text(messages[-1])
-            totals = extract_usage_from_messages(messages)
-            usage = {
-                "input_tokens": totals.input_tokens,
-                "output_tokens": totals.output_tokens,
-            }
-            if totals.input_tokens or totals.output_tokens:
-                return response_text, usage
+            last_message = messages[-1]
+            response_text = message_text(last_message)
             return response_text, None
 
     async def _run_planner_json(
@@ -119,7 +113,6 @@ class _GoTRuntime:
             max_reasks=3,
             original_task_context=task_context,
         )
-        self._apply_usage_list(result.usage_metadata)
         return result
 
     async def ainvoke(
@@ -156,11 +149,12 @@ class _GoTRuntime:
             )
 
         async def solver_runner(user_prompt: str) -> str:
+            fresh_config = {
+                "configurable": {"thread_id": f"got-solver-{uuid.uuid4().hex}"}
+            }
             response_text, usage = await self._call_worker(
-                user_prompt=user_prompt, config=config
+                user_prompt=user_prompt, config=fresh_config
             )
-            if usage:
-                self._apply_usage_list([usage])
             return response_text
 
         algorithm = GoTAlgorithm(

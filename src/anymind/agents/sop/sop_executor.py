@@ -29,7 +29,7 @@ class SopExecutionConfig:
 
 
 SolverFn = Callable[
-    [str, str],
+    [str, str, bool],
     Awaitable[tuple[str, dict[str, dict[str, int]] | None, list[Any]]],
 ]
 UsageFn = Callable[[dict[str, dict[str, int]] | None], None]
@@ -89,11 +89,18 @@ def _format_upstream_context(
     for pid in predecessors:
         res = node_results.get(pid, {})
         content = str(res.get("content") or "").strip()
+        evidence_ids: list[str] = []
+        for record in res.get("evidence") or []:
+            if hasattr(record, "id"):
+                evidence_ids.append(str(record.id))
+            elif isinstance(record, dict) and record.get("id"):
+                evidence_ids.append(str(record.get("id")))
         upstream.append(
             {
                 "node_id": pid,
                 "status": res.get("status"),
                 "content": _truncate(content, per_node),
+                "evidence_ids": evidence_ids,
             }
         )
 
@@ -101,39 +108,6 @@ def _format_upstream_context(
         {"upstream": upstream}, ensure_ascii=False, indent=2, default=str
     )
     return _truncate(rendered, max_chars)
-
-
-def _render_evidence_index(
-    ledger: EvidenceLedger | None,
-    *,
-    max_chars: int,
-    item_max_chars: int,
-    max_items: int = 50,
-) -> str:
-    if ledger is None:
-        return ""
-    records = ledger.all()
-    if not records:
-        return ""
-
-    parts: list[str] = []
-    total = 0
-    for record in records[:max_items]:
-        content = (record.content or "").strip()
-        content = _truncate(content, item_max_chars)
-        line = (
-            f"[{record.id}] {record.tool}: {content}"
-            if content
-            else f"[{record.id}] {record.tool}"
-        )
-        if total + len(line) > max_chars:
-            remaining = max_chars - total
-            if remaining > 0:
-                parts.append(line[:remaining].rstrip())
-            break
-        parts.append(line)
-        total += len(line)
-    return "\n".join(parts).strip()
 
 
 def _select_final_answer(
@@ -199,6 +173,10 @@ async def execute_sop(
             node = nodes[nid]
             ntype = _node_type(node)
             question = get_node_question(node)
+            allow_tools = node.get("allow_tools")
+            if allow_tools is None:
+                allow_tools = True
+            allow_tools = bool(allow_tools)
 
             if ntype in {"parallel"}:
                 return nid, {
@@ -247,19 +225,8 @@ async def execute_sop(
                 max_chars=config.node_context_max_chars,
             )
 
-            shared_evidence = _render_evidence_index(
-                ledger,
-                max_chars=config.evidence_max_chars,
-                item_max_chars=config.evidence_item_max_chars,
-            )
-
             def _build_query(question_text: str) -> str:
                 parts: list[str] = [question_text]
-                if shared_evidence:
-                    parts.append(
-                        "Shared tool evidence (from prior SOP nodes, treat as authoritative):\n"
-                        + shared_evidence
-                    )
                 if ctx:
                     parts.append("Upstream context:\n" + ctx)
                 return "\n\n".join(parts)
@@ -281,7 +248,7 @@ async def execute_sop(
                 question_text: str,
             ) -> tuple[str, dict[str, dict[str, int]] | None]:
                 response, usage_metadata, _ = await solver(
-                    brain, _build_query(question_text)
+                    brain, _build_query(question_text), allow_tools
                 )
                 record_usage(usage_metadata)
                 return response, usage_metadata

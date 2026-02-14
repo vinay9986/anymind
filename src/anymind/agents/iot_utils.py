@@ -11,6 +11,8 @@ import numpy as np
 from langchain_core.messages import BaseMessage
 
 from anymind.runtime.evidence import get_current_ledger
+from anymind.runtime.session_context import get_session_id
+from anymind.runtime.usage_store import get_usage_store
 from anymind.runtime.tool_validation import require_tool_description
 from anymind.runtime.messages import message_text
 from anymind.runtime.onnx_embedder import OnnxEmbedderConfig, OnnxSentenceEmbedder
@@ -143,6 +145,10 @@ class UsageCounter:
 def budget_exhausted(counter: UsageCounter, budget_tokens: Optional[int]) -> bool:
     if budget_tokens is None:
         return False
+    session_id = get_session_id()
+    if session_id:
+        totals = get_usage_store().get(session_id).totals
+        return (totals.input_tokens + totals.output_tokens) >= int(budget_tokens)
     return counter.total_tokens >= int(budget_tokens)
 
 

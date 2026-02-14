@@ -22,7 +22,6 @@ from anymind.agents.iot_utils import (
 from anymind.agents.tool_agent_pool import ToolAgentPool
 from anymind.agents.usage_tracker import UsageBudgetTracker
 from anymind.config.schemas import AGoTConfig
-from anymind.runtime.usage import extract_usage_from_messages
 from anymind.runtime.validated_json import (
     ValidatedJsonResult,
     generate_validated_json_with_calls,
@@ -113,14 +112,8 @@ class _AGoTRuntime:
             messages = result.get("messages", [])
             if not messages:
                 return "", None
-            response_text = message_text(messages[-1])
-            totals = extract_usage_from_messages(messages)
-            usage = {
-                "input_tokens": totals.input_tokens,
-                "output_tokens": totals.output_tokens,
-            }
-            if totals.input_tokens or totals.output_tokens:
-                return response_text, usage
+            last_message = messages[-1]
+            response_text = message_text(last_message)
             return response_text, None
 
     async def _run_planner_json(
@@ -141,7 +134,6 @@ class _AGoTRuntime:
             max_reasks=3,
             original_task_context=task_context,
         )
-        self._apply_usage_list(result.usage_metadata)
         return result
 
     async def _run_worker_json(
@@ -166,7 +158,6 @@ class _AGoTRuntime:
             max_reasks=3,
             original_task_context=task_context,
         )
-        self._apply_usage_list(result.usage_metadata)
         return result
 
     async def ainvoke(

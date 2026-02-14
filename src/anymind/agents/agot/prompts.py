@@ -28,8 +28,8 @@ TOOL EVIDENCE POLICY (applies whenever present in the question/context)
 - If the question/context includes "External tool findings", treat them as
   evidence and prefer them over assumptions.
 - Reliability varies by tool:
-  - Search/result tools (tool name contains "search") often provide snippets/leads; do NOT treat snippets as authoritative for precise facts
-    (dates, locations, counts, quotes). If precision matters and a URL is provided, verify by fetching the source page/document when possible.
+  - The internet_search tool returns semantically extracted snippets from fetched pages; treat those snippets as authoritative for the facts they contain.
+    If a precise fact is not present in the snippet, do not infer it.
   - Page/document fetch tools (full page/content) are authoritative for the fetched content.
 - If tool findings contain the information needed to answer the question (e.g.,
   a specific date, location, or factual detail), prefer that over prior assumptions or general
@@ -182,8 +182,8 @@ Note: Your result will be integrated into the larger task graph, and your contri
 EVIDENCE POLICY:
 - If the task/context includes "External tool findings", treat them as evidence and prefer them over assumptions.
 - Reliability varies by tool:
-  - Search/result tools (tool name contains "search") often provide snippets/leads; do NOT treat snippets as authoritative for precise facts
-    (dates, locations, counts, quotes). If precision matters and a URL is provided, verify by fetching the source page/document when possible.
+  - The internet_search tool returns semantically extracted snippets from fetched pages; treat those snippets as authoritative for the facts they contain.
+    If a precise fact is not present in the snippet, do not infer it.
   - Page/document fetch tools (full page/content) are authoritative for the fetched content.
 - If tool findings contain the needed facts, use them directly and do not replace them with assumptions.
 - If tool findings contradict prior knowledge (e.g., a year treated as "future"), trust the tool findings.

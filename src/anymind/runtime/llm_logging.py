@@ -7,6 +7,9 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import BaseMessage, message_to_dict
 from langchain_core.outputs import LLMResult
 
+from anymind.runtime.session_context import get_session_id
+from anymind.runtime.usage_store import get_usage_store
+
 
 def _serialize_messages(batch: Iterable[BaseMessage]) -> list[dict[str, Any]]:
     return [message_to_dict(message) for message in batch]
@@ -59,6 +62,35 @@ class LLMRequestLogger(BaseCallbackHandler):
         if kwargs:
             payload["params"] = kwargs
         self._logger.info("llm_response", **payload)
+        self._record_usage(response)
+
+    def _record_usage(self, response: LLMResult) -> None:
+        session_id = get_session_id()
+        if not session_id:
+            return
+        token_usage = None
+        if response.llm_output and isinstance(response.llm_output, dict):
+            token_usage = response.llm_output.get("token_usage")
+        if token_usage is None:
+            for batch in response.generations or []:
+                for generation in batch:
+                    message = getattr(generation, "message", None)
+                    usage = getattr(message, "usage_metadata", None) if message else None
+                    if usage:
+                        token_usage = usage
+                        break
+                if token_usage:
+                    break
+        if not token_usage:
+            return
+        input_tokens = token_usage.get("prompt_tokens", token_usage.get("input_tokens", 0))
+        output_tokens = token_usage.get("completion_tokens", token_usage.get("output_tokens", 0))
+        get_usage_store().add(
+            session_id=session_id,
+            model=self._model,
+            input_tokens=int(input_tokens or 0),
+            output_tokens=int(output_tokens or 0),
+        )
 
     def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
         payload: dict[str, Any] = {

@@ -33,6 +33,8 @@ from anymind.agents.research_director.prompts import (
 )
 from anymind.config.schemas import ResearchDirectorConfig
 from anymind.runtime.json_validation import JSONStructureValidator
+from anymind.runtime.session_context import get_session_id
+from anymind.runtime.usage_store import get_usage_store
 from anymind.runtime.validated_json import (
     ValidatedJsonResult,
     generate_validated_json_with_calls,
@@ -77,10 +79,35 @@ class _ResearchDirectorRuntime:
     def _apply_usage_map(
         self, usage_metadata: Optional[dict[str, dict[str, int]]], counter: UsageCounter
     ) -> None:
-        if not usage_metadata:
-            return
-        for usage in usage_metadata.values():
-            counter.add_usage(usage)
+        # budget tracking handled via session usage store
+        return
+
+    def _usage_metadata_from_store(
+        self, counter: UsageCounter
+    ) -> dict[str, dict[str, int]]:
+        session_id = get_session_id()
+        if session_id:
+            snapshot = get_usage_store().get(session_id)
+            if snapshot.per_model:
+                return {
+                    model: {
+                        "input_tokens": totals.input_tokens,
+                        "output_tokens": totals.output_tokens,
+                    }
+                    for model, totals in snapshot.per_model.items()
+                }
+            return {
+                self._model_name: {
+                    "input_tokens": snapshot.totals.input_tokens,
+                    "output_tokens": snapshot.totals.output_tokens,
+                }
+            }
+        return {
+            self._model_name: {
+                "input_tokens": counter.input_tokens,
+                "output_tokens": counter.output_tokens,
+            }
+        }
 
     def _truncate(self, text: str) -> str:
         return truncate_text(text, int(self._settings.trace_max_chars))
@@ -379,7 +406,6 @@ class _ResearchDirectorRuntime:
             max_reasks=3,
             original_task_context="Research director manager decision",
         )
-        usage_counter.add_usage_list(result.usage_metadata)
 
         ok, err = self._validate_manager_decision(result.data)
         if not ok:
@@ -494,7 +520,6 @@ class _ResearchDirectorRuntime:
             max_reasks=3,
             original_task_context="Research director final synthesis",
         )
-        usage_counter.add_usage_list(result.usage_metadata)
         return str(result.data.get("final_answer", "") or "").strip()
 
     async def ainvoke(
@@ -568,12 +593,7 @@ class _ResearchDirectorRuntime:
                     probe_history=probe_history,
                     usage_counter=usage_counter,
                 )
-                usage_metadata = {
-                    self._model_name: {
-                        "input_tokens": usage_counter.input_tokens,
-                        "output_tokens": usage_counter.output_tokens,
-                    }
-                }
+                usage_metadata = self._usage_metadata_from_store(usage_counter)
                 return {
                     "messages": [AIMessage(content=final_answer)],
                     "usage_metadata": usage_metadata,
@@ -665,6 +685,7 @@ class _ResearchDirectorRuntime:
                 "output_tokens": usage_counter.output_tokens,
             }
         }
+        usage_metadata = self._usage_metadata_from_store(usage_counter)
         return {
             "messages": [AIMessage(content=fallback)],
             "usage_metadata": usage_metadata,

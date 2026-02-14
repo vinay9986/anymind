@@ -10,13 +10,13 @@ from anymind.runtime.citations import render_with_citations
 from anymind.runtime.evidence import summarize_for_display, use_ledger
 from anymind.runtime.messages import message_text
 from anymind.runtime.session import Session
+from anymind.runtime.session_context import reset_session_id, set_session_id
 from anymind.runtime.session_usage import (
-    apply_usage,
     enforce_token_budget,
     token_totals,
 )
+from anymind.runtime.usage_store import get_usage_store
 from anymind.runtime.tool_selection import select_tools_for_policy
-from anymind.runtime.usage import normalize_usage_metadata
 from anymind.runtime.agent_registry import AgentRegistry
 
 
@@ -42,35 +42,36 @@ class TurnRunner:
         policy = resolve_tool_policy(session.tool_policy_name)
         tools_enabled = bool(session.model_config.tools_enabled and session.tools)
 
-        async with session.lock:
-            session.evidence_ledger.start_turn()
+        token = set_session_id(session.session_id)
+        try:
+            async with session.lock:
+                session.evidence_ledger.start_turn()
 
-            with use_ledger(session.evidence_ledger):
-                if pause_event is not None:
-                    await pause_event.wait()
+                with use_ledger(session.evidence_ledger):
+                    if pause_event is not None:
+                        await pause_event.wait()
 
-                input_messages: list[tuple[str, str]] = [("user", user_input)]
-                if session.agent_name == "research_agent" and session.chat_history:
-                    max_messages = 20
-                    history = session.chat_history[-max_messages:]
-                    input_messages = history + [("user", user_input)]
+                    input_messages: list[tuple[str, str]] = [("user", user_input)]
+                    if session.agent_name == "research_agent" and session.chat_history:
+                        max_messages = 20
+                        history = session.chat_history[-max_messages:]
+                        input_messages = history + [("user", user_input)]
 
-                agent = (
-                    session.agent_with_tools
-                    if tools_enabled
-                    else session.agent_no_tools
-                )
-
-                if tools_enabled and policy.name == "planner":
-                    selected_tools, planner_usage = await select_tools_for_policy(
-                        policy=policy,
-                        tools=session.tools,
-                        user_input=user_input,
-                        model_client=session.model_client,
-                        model_name=session.model_config.model,
+                    selected_tools = session.tools if tools_enabled else []
+                    agent = (
+                        session.agent_with_tools
+                        if tools_enabled
+                        else session.agent_no_tools
                     )
-                    if planner_usage:
-                        apply_usage(session, planner_usage)
+
+                    if tools_enabled and policy.name == "planner":
+                        selected_tools, planner_usage = await select_tools_for_policy(
+                            policy=policy,
+                            tools=session.tools,
+                            user_input=user_input,
+                            model_client=session.model_client,
+                            model_name=session.model_config.model,
+                        )
                     if selected_tools:
                         cache_key = tuple(
                             getattr(tool, "name", "") for tool in selected_tools
@@ -80,7 +81,6 @@ class TurnRunner:
                             agent = self._agents.get(session.agent_name).build(
                                 AgentContext(
                                     model_config=session.model_config,
-                                    pricing=session.pricing,
                                     tools=selected_tools,
                                     tool_policy=policy,
                                     model_client=session.model_client,
@@ -91,17 +91,18 @@ class TurnRunner:
                     else:
                         agent = session.agent_no_tools
 
-                if pause_event is not None:
-                    await pause_event.wait()
+                    if pause_event is not None:
+                        await pause_event.wait()
 
-                config = {
-                    "configurable": {
-                        "thread_id": thread_id or session.model_config.thread_id
+                    config = {
+                        "configurable": {
+                            "thread_id": thread_id or session.model_config.thread_id
+                        },
+                        "metadata": {"session_id": session.session_id},
                     }
-                }
-                result = await agent.ainvoke(
-                    {"messages": input_messages}, config=config
-                )
+                    result = await agent.ainvoke(
+                        {"messages": input_messages}, config=config
+                    )
 
             messages = result.get("messages", [])
             response_text = message_text(messages[-1]) if messages else ""
@@ -122,15 +123,24 @@ class TurnRunner:
                     draft=response_text,
                     evidence_records=evidence_records,
                 )
-                apply_usage(session, citation_usage)
 
-            usage_metadata = result.get("usage_metadata")
-            if not usage_metadata:
-                usage_metadata = normalize_usage_metadata(
-                    session.model_config.model, messages
-                )
+            snapshot = get_usage_store().get(session.session_id)
+            if snapshot.per_model:
+                usage_metadata = {
+                    model: {
+                        "input_tokens": totals.input_tokens,
+                        "output_tokens": totals.output_tokens,
+                    }
+                    for model, totals in snapshot.per_model.items()
+                }
+            else:
+                usage_metadata = {
+                    session.model_config.model: {
+                        "input_tokens": snapshot.totals.input_tokens,
+                        "output_tokens": snapshot.totals.output_tokens,
+                    }
+                }
 
-            apply_usage(session, usage_metadata)
             enforce_token_budget(session)
             token_totals_out = token_totals(session)
 
@@ -148,3 +158,5 @@ class TurnRunner:
                     for record in evidence_records
                 ],
             }
+        finally:
+            reset_session_id(token)

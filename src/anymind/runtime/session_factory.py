@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -8,9 +9,8 @@ from anymind.agents.base import AgentContext
 from anymind.config.loader import (
     load_mcp_config,
     load_model_config,
-    load_pricing_config,
 )
-from anymind.config.schemas import MCPConfig, ModelConfig, PricingConfig
+from anymind.config.schemas import MCPConfig, ModelConfig
 from anymind.policies.tool_policy import resolve_tool_policy
 from anymind.runtime.agent_registry import AgentRegistry
 from anymind.runtime.cache import create_cache
@@ -27,8 +27,6 @@ from anymind.runtime.mcp_registry import (
 )
 from anymind.runtime.session import Session
 from anymind.runtime.tool_validation import ensure_tools_have_descriptions
-from anymind.runtime.usage import PricingTable
-
 
 class SessionFactory:
     def __init__(
@@ -63,12 +61,12 @@ class SessionFactory:
         *,
         agent_name: str,
         model_config: Optional[ModelConfig] = None,
-        pricing_config: Optional[PricingConfig] = None,
         mcp_config: Optional[MCPConfig] = None,
     ) -> Session:
         model_cfg = model_config or load_model_config()
         self._apply_search_env(model_cfg)
-        pricing_cfg = pricing_config or load_pricing_config()
+        if model_cfg.cache and model_cfg.cache.redis_url:
+            os.environ.setdefault("ANYMIND_USAGE_REDIS_URL", model_cfg.cache.redis_url)
         mcp_cfg = mcp_config
         if mcp_cfg is None:
             try:
@@ -77,7 +75,6 @@ class SessionFactory:
                 mcp_cfg = MCPConfig()
 
         model_client = self._llm_factory.get(model_cfg)
-        pricing = PricingTable(pricing_cfg)
         tool_policy_name = model_cfg.tools_policy
         if model_cfg.model_provider == "ollama" and tool_policy_name == "auto":
             tool_policy_name = "planner"
@@ -118,19 +115,17 @@ class SessionFactory:
         agent_with_tools = None
         if model_cfg.tools_enabled and tools:
             agent_with_tools = agent_instance.build(
-                AgentContext(
-                    model_config=model_cfg,
-                    pricing=pricing_cfg,
-                    tools=tools,
-                    tool_policy=tool_policy,
-                    model_client=model_client,
+                        AgentContext(
+                            model_config=model_cfg,
+                            tools=tools,
+                            tool_policy=tool_policy,
+                            model_client=model_client,
                     checkpointer=checkpointer,
                 )
             )
         agent_no_tools = agent_instance.build(
             AgentContext(
                 model_config=model_cfg,
-                pricing=pricing_cfg,
                 tools=[],
                 tool_policy=tool_policy,
                 model_client=model_client,
@@ -139,9 +134,9 @@ class SessionFactory:
         )
 
         return Session(
+            session_id=uuid.uuid4().hex,
             agent_name=agent_name,
             model_config=model_cfg,
-            pricing=pricing,
             tool_policy_name=tool_policy.name,
             model_client=model_client,
             tools=tools,

@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from anymind.runtime.session import Session
-from anymind.runtime.usage import PricingTable, UsageTotals
+from anymind.runtime.usage import UsageTotals
+from anymind.runtime.usage_store import get_usage_store
 
 
 def apply_usage(session: Session, usage_metadata: Dict[str, Dict[str, int]]) -> None:
@@ -13,7 +14,16 @@ def apply_usage(session: Session, usage_metadata: Dict[str, Dict[str, int]]) -> 
 
 
 def token_totals(session: Session) -> Dict[str, Dict[str, int]]:
+    snapshot = get_usage_store().get(session.session_id)
     totals_out: Dict[str, Dict[str, int]] = {}
+    if snapshot.per_model:
+        for model_name, totals in snapshot.per_model.items():
+            totals_out[model_name] = {
+                "input_tokens": totals.input_tokens,
+                "output_tokens": totals.output_tokens,
+                "total_tokens": totals.input_tokens + totals.output_tokens,
+            }
+        return totals_out
     for model_name, totals in session.totals_by_model.items():
         totals_out[model_name] = {
             "input_tokens": totals.input_tokens,
@@ -33,7 +43,10 @@ def _total_tokens(session: Session) -> int:
 def enforce_token_budget(session: Session) -> None:
     if session.model_config.budget_tokens is None:
         return
-    if _total_tokens(session) >= int(session.model_config.budget_tokens):
+    totals = get_usage_store().get(session.session_id).totals
+    if (totals.input_tokens + totals.output_tokens) >= int(
+        session.model_config.budget_tokens
+    ):
         session.budget_exhausted = True
 
 
@@ -41,45 +54,36 @@ def session_summary(session: Session) -> Dict[str, Any]:
     models: Dict[str, Dict[str, float]] = {}
     total_input_tokens = 0
     total_output_tokens = 0
-    total_input_cost = 0.0
-    total_output_cost = 0.0
-    provider = (session.model_config.model_provider or "").lower()
-    costs_free = provider == "ollama"
 
-    pricing: PricingTable = session.pricing
+    usage_snapshot = get_usage_store().get(session.session_id)
+    totals_by_model = usage_snapshot.per_model or session.totals_by_model
 
-    for model_name, totals in session.totals_by_model.items():
-        costs = (
-            {"input": 0.0, "output": 0.0, "total": 0.0}
-            if costs_free
-            else pricing.cost(model_name, totals)
-        )
+    for model_name, totals in totals_by_model.items():
         model_input = totals.input_tokens
         model_output = totals.output_tokens
         models[model_name] = {
             "input_tokens": model_input,
             "output_tokens": model_output,
             "total_tokens": model_input + model_output,
-            "input_cost": costs["input"],
-            "output_cost": costs["output"],
-            "total_cost": costs["total"],
         }
         total_input_tokens += model_input
         total_output_tokens += model_output
-        total_input_cost += costs["input"]
-        total_output_cost += costs["output"]
 
-    total = {
-        "input_tokens": total_input_tokens,
-        "output_tokens": total_output_tokens,
-        "total_tokens": total_input_tokens + total_output_tokens,
-        "input_cost": total_input_cost,
-        "output_cost": total_output_cost,
-        "total_cost": total_input_cost + total_output_cost,
-    }
+    if usage_snapshot.per_model:
+        total = {
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+            "total_tokens": total_input_tokens + total_output_tokens,
+        }
+    else:
+        totals = usage_snapshot.totals
+        total = {
+            "input_tokens": totals.input_tokens,
+            "output_tokens": totals.output_tokens,
+            "total_tokens": totals.input_tokens + totals.output_tokens,
+        }
 
     return {
-        "currency": pricing.currency,
         "models": models,
         "total": total,
     }

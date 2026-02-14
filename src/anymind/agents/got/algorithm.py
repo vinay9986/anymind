@@ -58,7 +58,7 @@ class GoTConfig:
     verify_max_retries: int = 2
 
     max_diversity_samples: int = 20
-    tool_feedback_max_chars: int = 8000
+    tool_feedback_max_chars: int = 0
     context_max_chars: int = 1800
     final_top_k: int = 12
 
@@ -681,6 +681,11 @@ class GoTAlgorithm:
         if ledger is not None:
             records = ledger.recent()
             if records:
+                if max_chars <= 0:
+                    return "\n".join(
+                        f"[{record.id}] {record.tool}: {record.content.strip()}"
+                        for record in records
+                    ).strip()
                 parts: list[str] = []
                 total = 0
                 for record in records:

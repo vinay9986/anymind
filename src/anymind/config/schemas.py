@@ -118,13 +118,5 @@ class ModelConfig(BaseModel):
     research_director: Optional[ResearchDirectorConfig] = None
 
 
-class PricingConfig(BaseModel):
-    currency: str = "USD"
-    prices_per_1k_tokens: Dict[str, Dict[str, float]] = Field(default_factory=dict)
-    default: Dict[str, float] = Field(
-        default_factory=lambda: {"input": 0.0, "output": 0.0}
-    )
-
-
 class MCPConfig(BaseModel):
     servers: Dict[str, Dict[str, Any]] = Field(default_factory=dict)

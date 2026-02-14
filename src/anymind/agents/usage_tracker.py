@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
+from anymind.runtime.session_context import get_session_id
 from anymind.runtime.usage import UsageTotals
+from anymind.runtime.usage_store import get_usage_store
 
 
 @dataclass
@@ -42,10 +44,18 @@ class UsageBudgetTracker:
 
     @property
     def input_tokens(self) -> int:
+        session_id = get_session_id()
+        if session_id:
+            totals = get_usage_store().get(session_id).totals
+            return totals.input_tokens
         return sum(totals.input_tokens for totals in self.totals_by_model.values())
 
     @property
     def output_tokens(self) -> int:
+        session_id = get_session_id()
+        if session_id:
+            totals = get_usage_store().get(session_id).totals
+            return totals.output_tokens
         return sum(totals.output_tokens for totals in self.totals_by_model.values())
 
     @property
@@ -64,6 +74,17 @@ class UsageBudgetTracker:
         return max(0, remaining)
 
     def usage_metadata(self) -> dict[str, dict[str, int]]:
+        session_id = get_session_id()
+        if session_id:
+            snapshot = get_usage_store().get(session_id)
+            if snapshot.per_model:
+                return {
+                    model: {
+                        "input_tokens": totals.input_tokens,
+                        "output_tokens": totals.output_tokens,
+                    }
+                    for model, totals in snapshot.per_model.items()
+                }
         if not self.totals_by_model:
             return {
                 self.model_name: {

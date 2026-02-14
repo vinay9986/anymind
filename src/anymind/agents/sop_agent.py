@@ -20,7 +20,6 @@ from anymind.agents.iot_utils import (
 )
 from anymind.config.schemas import SopConfig
 from anymind.runtime.evidence import get_current_ledger
-from anymind.runtime.usage import normalize_usage_metadata
 from anymind.agents.usage_tracker import UsageBudgetTracker
 from anymind.runtime.tool_selection import select_tools_for_policy
 from anymind.agents.sop.sop_executor import SopExecutionConfig, execute_sop
@@ -79,7 +78,6 @@ class _SopRuntime:
             model_client=self._context.model_client,
             model_name=self._context.model_config.model,
         )
-        usage_tracker.add_usage_metadata(usage)
         return selected
 
     def _get_agent_runtime(
@@ -108,7 +106,6 @@ class _SopRuntime:
         runtime = agent.build(
             AgentContext(
                 model_config=model_config,
-                pricing=self._context.pricing,
                 tools=tools,
                 tool_policy=self._context.tool_policy,
                 model_client=self._context.model_client,
@@ -121,9 +118,17 @@ class _SopRuntime:
         return runtime
 
     async def _solve(
-        self, algorithm: str, query: str, usage_tracker: UsageBudgetTracker
+        self,
+        algorithm: str,
+        query: str,
+        usage_tracker: UsageBudgetTracker,
+        allow_tools: bool,
     ) -> tuple[str, dict[str, dict[str, int]] | None, list[Any]]:
-        tools = await self._select_tools(user_input=query, usage_tracker=usage_tracker)
+        tools: list[Any] = []
+        if allow_tools:
+            tools = await self._select_tools(
+                user_input=query, usage_tracker=usage_tracker
+            )
         runtime = self._get_agent_runtime(
             algorithm, tools, usage_tracker.remaining_budget()
         )
@@ -134,9 +139,7 @@ class _SopRuntime:
         response_text = message_text(messages[-1]) if messages else ""
         usage_metadata = result.get("usage_metadata")
         if not usage_metadata:
-            usage_metadata = normalize_usage_metadata(
-                self._context.model_config.model, messages
-            )
+            usage_metadata = None
         return response_text, usage_metadata, []
 
     async def ainvoke(
@@ -177,9 +180,7 @@ class _SopRuntime:
                 sop = optimized.sop
                 for usage in optimized.usage_metadata:
                     if usage:
-                        usage_tracker.add_usage_metadata(
-                            {self._context.model_config.model: usage}
-                        )
+                        pass
 
         sop_config = SopExecutionConfig(
             max_concurrency=self._settings.max_concurrency,
@@ -206,8 +207,10 @@ class _SopRuntime:
             sop=sop,
             execution_id=execution_id,
             config=sop_config,
-            solver=lambda algo, prompt: self._solve(algo, prompt, usage_tracker),
-            record_usage=usage_tracker.add_usage_metadata,
+            solver=lambda algo, prompt, allow_tools: self._solve(
+                algo, prompt, usage_tracker, allow_tools
+            ),
+            record_usage=lambda *_args, **_kwargs: None,
             budget_exhausted=usage_tracker.budget_exhausted,
             ledger=ledger,
             model_client=self._context.model_client,

@@ -6,14 +6,14 @@ from typing import Any, Dict
 
 from anymind.config.schemas import ModelConfig
 from anymind.runtime.evidence import EvidenceLedger
-from anymind.runtime.usage import PricingTable, UsageTotals
+from anymind.runtime.usage import UsageTotals
 
 
 @dataclass
 class Session:
+    session_id: str
     agent_name: str
     model_config: ModelConfig
-    pricing: PricingTable
     tool_policy_name: str
     model_client: Any
     tools: list[Any]

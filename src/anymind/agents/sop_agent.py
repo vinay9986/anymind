@@ -26,6 +26,7 @@ from anymind.agents.sop.sop_executor import SopExecutionConfig, execute_sop
 from anymind.agents.sop.sop_optimizer import optimize_sop
 from anymind.agents.sop.sop_validation import get_optimize_flag, validate_sop_structure
 from anymind.agents.sop.sop_runtime_updates import update_sop_with_node_result
+from anymind.runtime.llm_errors import raise_if_llm_http_error
 
 
 class SopAgent:
@@ -175,6 +176,7 @@ class _SopRuntime:
                     sop=sop, model_client=self._context.model_client
                 )
             except Exception as exc:
+                raise_if_llm_http_error(exc)
                 self._logger.warning("sop_optimize_failed", error=str(exc))
             else:
                 sop = optimized.sop
@@ -224,8 +226,24 @@ class _SopRuntime:
         metrics.pop("execution_id", None)
         self._logger.info("sop_complete", execution_id=execution_id, **metrics)
 
+        evidence_ids: list[str] = []
+        for result in node_results.values():
+            for record in result.get("evidence") or []:
+                if hasattr(record, "id"):
+                    evidence_ids.append(str(record.id))
+                elif isinstance(record, dict) and record.get("id"):
+                    evidence_ids.append(str(record.get("id")))
+        seen: set[str] = set()
+        deduped_evidence_ids: list[str] = []
+        for eid in evidence_ids:
+            if eid in seen:
+                continue
+            seen.add(eid)
+            deduped_evidence_ids.append(eid)
+
         usage_metadata = usage_tracker.usage_metadata()
         return {
             "messages": [AIMessage(content=final_answer)],
             "usage_metadata": usage_metadata,
+            "evidence_ids": deduped_evidence_ids,
         }

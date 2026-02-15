@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from collections import Counter
 from typing import Any, Optional, Tuple
 
@@ -42,6 +43,8 @@ from anymind.runtime.validated_json import (
     generate_validated_json,
     generate_validated_json_with_calls,
 )
+from anymind.runtime.llm_factory import LLMFactory
+from anymind.runtime.llm_errors import raise_if_llm_http_error, safe_ainvoke
 
 
 class GIoTAgent:
@@ -59,21 +62,55 @@ class _GIoTRuntime:
         self._settings = context.model_config.giot or GIoTConfig()
         self._embedder = try_load_embedder()
         self._logger = structlog.get_logger("anymind.giot")
+        self._agent_temperatures: list[float] = []
 
         middleware = []
         if context.model_config.model_provider == "bedrock":
             middleware.append(BedrockToolResultSanitizer())
 
-        self._tool_agents = [
-            create_agent(
-                context.model_client,
-                context.tools,
-                system_prompt=LLM_SYSTEM_PROMPT,
-                middleware=middleware,
-                checkpointer=context.checkpointer,
+        base_params = dict(context.model_config.model_parameters or {})
+        base_temp = float(base_params.get("temperature", 0.2))
+        if base_temp < self._settings.temperature_min:
+            base_temp = self._settings.temperature_min
+        if base_temp > self._settings.temperature_max:
+            base_temp = self._settings.temperature_max
+        n_agents = int(self._settings.n_agents)
+        step = float(self._settings.temperature_step)
+        if n_agents <= 1:
+            temps = [base_temp]
+        else:
+            max_step = (self._settings.temperature_max - base_temp) / max(
+                1, (n_agents - 1)
             )
-            for _ in range(self._settings.n_agents)
-        ]
+            effective_step = min(step, max_step)
+            temps = []
+            for i in range(n_agents):
+                temp = base_temp + (effective_step * i)
+                temp = max(
+                    self._settings.temperature_min,
+                    min(self._settings.temperature_max, temp),
+                )
+                temps.append(temp)
+        self._agent_temperatures = temps
+
+        factory = LLMFactory()
+        self._tool_agents = []
+        for temp in temps:
+            params = dict(base_params)
+            params["temperature"] = temp
+            model_cfg = context.model_config.model_copy(
+                update={"model_parameters": params}
+            )
+            model_client = factory.get(model_cfg)
+            self._tool_agents.append(
+                create_agent(
+                    model_client,
+                    context.tools,
+                    system_prompt=LLM_SYSTEM_PROMPT,
+                    middleware=middleware,
+                    checkpointer=context.checkpointer,
+                )
+            )
 
     async def _call_worker(
         self,
@@ -82,8 +119,11 @@ class _GIoTRuntime:
         user_prompt: str,
         config: Optional[dict[str, Any]],
     ) -> tuple[str, Optional[dict[str, int]]]:
-        result = await self._tool_agents[agent_idx].ainvoke(
-            {"messages": [("user", user_prompt)]}, config=config
+        result = await safe_ainvoke(
+            self._tool_agents[agent_idx],
+            {"messages": [("user", user_prompt)]},
+            config=config,
+            llm_only=False,
         )
         messages = result.get("messages", [])
         if not messages:
@@ -95,8 +135,9 @@ class _GIoTRuntime:
     async def _call_fix(
         self, system_prompt: str, user_prompt: str
     ) -> tuple[str, Optional[dict[str, int]]]:
-        message = await self._context.model_client.ainvoke(
-            [("system", system_prompt), ("user", user_prompt)]
+        message = await safe_ainvoke(
+            self._context.model_client,
+            [("system", system_prompt), ("user", user_prompt)],
         )
         usage = getattr(message, "usage_metadata", None)
         return message_text(message), usage
@@ -310,6 +351,7 @@ class _GIoTRuntime:
             budget_tokens=self._budget_tokens,
             tools=len(self._context.tools),
             embedder_loaded=self._embedder is not None,
+            agent_temperatures=self._agent_temperatures,
         )
 
         round_num = 1
@@ -333,6 +375,7 @@ class _GIoTRuntime:
             agent_responses: list[dict[str, Any]] = []
             for result in results:
                 if isinstance(result, BaseException):
+                    raise_if_llm_http_error(result)
                     answers.append("Error")
                     agent_responses.append(
                         {"response": "Error", "answer_to_query": False}
@@ -396,6 +439,7 @@ class _GIoTRuntime:
                     sc_results = await asyncio.gather(*sc_tasks, return_exceptions=True)
                     for idx, result in zip(sc_indices, sc_results):
                         if isinstance(result, BaseException):
+                            raise_if_llm_http_error(result)
                             continue
                         refined, usage_list = result
                         if refined:
@@ -428,19 +472,55 @@ class _GIoTRuntime:
                         self._settings.sim_start
                         - self._settings.sim_decay * (round_num - 1),
                     )
-                    semantic_consensus = bool(similarities) and all(
-                        sim >= threshold for sim in similarities
-                    )
-                    if semantic_consensus:
-                        final_answer = select_semantic_representative(
-                            answers, embeddings
-                        )
+                    # Majority-based semantic consensus: accept if any answer
+                    # has at least semantic_k neighbors above the threshold.
+                    sims = embeddings @ embeddings.T
+                    n = int(sims.shape[0])
+                    if n == 1:
                         self._logger.info(
                             "giot_consensus_semantic",
                             round=round_num,
                             threshold=threshold,
+                            semantic_k=1,
+                            cluster_size=1,
                         )
-                        return self._build_response(final_answer, usage_counter)
+                        return self._build_response(answers[0], usage_counter)
+                    if similarities:
+                        semantic_k = max(
+                            2, int(math.ceil(self._settings.vote_ratio * n))
+                        )
+                        cluster_sizes = []
+                        for i in range(n):
+                            neighbors = int(
+                                sum(
+                                    1
+                                    for j in range(n)
+                                    if i != j and sims[i, j] >= threshold
+                                )
+                            )
+                            cluster_sizes.append(1 + neighbors)
+                        best_size = max(cluster_sizes) if cluster_sizes else 0
+                        if best_size >= semantic_k:
+                            # Use only answers in the largest cluster for the representative.
+                            best_idx = int(cluster_sizes.index(best_size))
+                            cluster_indices = [
+                                i
+                                for i in range(n)
+                                if i == best_idx or sims[best_idx, i] >= threshold
+                            ]
+                            cluster_answers = [answers[i] for i in cluster_indices]
+                            cluster_embeddings = embeddings[cluster_indices]
+                            final_answer = select_semantic_representative(
+                                cluster_answers, cluster_embeddings
+                            )
+                            self._logger.info(
+                                "giot_consensus_semantic",
+                                round=round_num,
+                                threshold=threshold,
+                                semantic_k=semantic_k,
+                                cluster_size=best_size,
+                            )
+                            return self._build_response(final_answer, usage_counter)
 
             formatted_answers = "\n".join(
                 [f"Agent {i + 1}: {a}" for i, a in enumerate(answers)]
@@ -453,29 +533,33 @@ class _GIoTRuntime:
                         formatted_answers, int(self._settings.trace_max_chars)
                     ),
                 )
-            facilitator = await generate_validated_json(
-                role_name="facilitator",
-                system_prompt=FACILITATOR_SYSTEM_PROMPT,
-                user_prompt=FACILITATOR_USER_PROMPT.format(answers=formatted_answers),
-                validator=JSONStructureValidator(
-                    {
-                        "consensus": {
-                            "type": bool,
-                            "required": True,
-                            "description": "consensus flag",
+                facilitator = await generate_validated_json(
+                    role_name="facilitator",
+                    system_prompt=FACILITATOR_SYSTEM_PROMPT,
+                    user_prompt=FACILITATOR_USER_PROMPT.format(
+                        answers=formatted_answers,
+                        vote_k=vote_k,
+                        n_agents=self._settings.n_agents,
+                    ),
+                    validator=JSONStructureValidator(
+                        {
+                            "consensus": {
+                                "type": bool,
+                                "required": True,
+                                "description": "consensus flag",
+                            },
+                            "explanation": {
+                                "type": str,
+                                "required": True,
+                                "description": "explanation",
+                            },
                         },
-                        "explanation": {
-                            "type": str,
-                            "required": True,
-                            "description": "explanation",
-                        },
-                    },
-                    validator_name="facilitator-response-validator",
-                ),
-                model_client=self._context.model_client,
-                max_reasks=3,
-                original_task_context=f"GIoT facilitator consensus check for query: {query}",
-            )
+                        validator_name="facilitator-response-validator",
+                    ),
+                    model_client=self._context.model_client,
+                    max_reasks=3,
+                    original_task_context=f"GIoT facilitator consensus check for query: {query}",
+                )
             # budget tracking handled via session usage store
             if self._settings.trace_steps:
                 self._logger.info(

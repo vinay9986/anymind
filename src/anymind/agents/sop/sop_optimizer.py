@@ -6,6 +6,7 @@ from typing import Any
 
 from anymind.runtime.json_parser import parse_json_robust
 from anymind.agents.sop.sop_validation import validate_sop_structure
+from anymind.runtime.llm_errors import safe_ainvoke
 
 
 @dataclass
@@ -40,8 +41,8 @@ def _render_user_prompt(sop: dict[str, Any]) -> str:
 async def _call_model(
     model_client: Any, system_prompt: str, user_prompt: str
 ) -> tuple[str, dict[str, int] | None]:
-    message = await model_client.ainvoke(
-        [("system", system_prompt), ("user", user_prompt)]
+    message = await safe_ainvoke(
+        model_client, [("system", system_prompt), ("user", user_prompt)]
     )
     usage = getattr(message, "usage_metadata", None)
     content = getattr(message, "content", "")

@@ -39,6 +39,7 @@ from anymind.runtime.validated_json import (
     ValidatedJsonResult,
     generate_validated_json_with_calls,
 )
+from anymind.runtime.llm_errors import raise_if_llm_http_error, safe_ainvoke
 
 
 @dataclass
@@ -324,8 +325,9 @@ class _ResearchDirectorRuntime:
     async def _call_llm(
         self, system_prompt: str, user_prompt: str
     ) -> tuple[str, Optional[dict[str, int]]]:
-        message = await self._context.model_client.ainvoke(
-            [("system", system_prompt), ("user", user_prompt)]
+        message = await safe_ainvoke(
+            self._context.model_client,
+            [("system", system_prompt), ("user", user_prompt)],
         )
         usage = getattr(message, "usage_metadata", None)
         return message_text(message), usage
@@ -440,15 +442,18 @@ class _ResearchDirectorRuntime:
             try:
                 runtime = self._probe_runtimes[strategy]
                 thread_id = f"{base_thread_id}::rd::{iteration}::{probe_id}"
-                result = await runtime.ainvoke(
+                result = await safe_ainvoke(
+                    runtime,
                     {"messages": [("user", question)]},
                     config={"configurable": {"thread_id": thread_id}},
+                    llm_only=False,
                 )
                 messages = result.get("messages", [])
                 answer = message_text(messages[-1]) if messages else ""
                 self._apply_usage_map(result.get("usage_metadata"), usage_counter)
                 status = "ok"
             except Exception as exc:
+                raise_if_llm_http_error(exc)
                 answer = f"Error: {exc}"
                 status = "error"
 
@@ -575,6 +580,7 @@ class _ResearchDirectorRuntime:
                 )
                 feedback = ""
             except Exception as exc:
+                raise_if_llm_http_error(exc)
                 feedback = f"Manager validation error: {exc}"
                 self._logger.warning(
                     "research_agent_manager_invalid",

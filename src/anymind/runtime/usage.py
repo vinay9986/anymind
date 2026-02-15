@@ -5,6 +5,9 @@ from typing import Any, Dict, Iterable
 
 from langchain_core.messages import BaseMessage
 
+from anymind.config.schemas import PricingConfig
+
+
 @dataclass
 class UsageTotals:
     input_tokens: int = 0
@@ -35,3 +38,38 @@ def normalize_usage_metadata(
             "output_tokens": totals.output_tokens,
         }
     }
+
+
+class PricingTable:
+    def __init__(self, config: PricingConfig) -> None:
+        self._config = config
+
+    def _match_pricing(self, model_name: str) -> Dict[str, float]:
+        if model_name in self._config.prices_per_1k_tokens:
+            return self._config.prices_per_1k_tokens[model_name]
+
+        matches = [
+            (key, price)
+            for key, price in self._config.prices_per_1k_tokens.items()
+            if model_name.startswith(key)
+        ]
+        if matches:
+            matches.sort(key=lambda item: len(item[0]), reverse=True)
+            return matches[0][1]
+
+        return self._config.default
+
+    def cost(self, model_name: str, totals: UsageTotals) -> Dict[str, float]:
+        pricing = self._match_pricing(str(model_name))
+        input_rate = float(pricing.get("input", 0.0) or 0.0)
+        output_rate = float(pricing.get("output", 0.0) or 0.0)
+
+        input_cost = (totals.input_tokens / 1000.0) * input_rate
+        output_cost = (totals.output_tokens / 1000.0) * output_rate
+        total_cost = input_cost + output_cost
+
+        return {
+            "input": input_cost,
+            "output": output_cost,
+            "total": total_cost,
+        }

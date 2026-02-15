@@ -10,6 +10,7 @@ from langchain_core.messages import BaseMessage
 from anymind.runtime.messages import message_text
 from anymind.runtime.usage import normalize_usage_metadata
 from anymind.runtime.tool_validation import require_tool_description
+from anymind.runtime.llm_errors import safe_ainvoke
 
 
 class ToolPolicy(Protocol):
@@ -109,8 +110,8 @@ class PlannerToolPolicy:
             "Respond with JSON."
         )
 
-        message: BaseMessage = await model_client.ainvoke(
-            [("system", self._system_prompt), ("user", prompt)]
+        message: BaseMessage = await safe_ainvoke(
+            model_client, [("system", self._system_prompt), ("user", prompt)]
         )
         usage_metadata = normalize_usage_metadata(model_name, [message])
         raw_output = message_text(message)

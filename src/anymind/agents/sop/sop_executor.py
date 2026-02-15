@@ -359,6 +359,23 @@ async def execute_sop(
             if ledger is not None:
                 node_evidence = ledger.all()[ledger_start:]
             result["evidence"] = node_evidence
+            if node_evidence:
+                log.info(
+                    "sop_node_evidence",
+                    execution_id=execution_id,
+                    node_id=nid,
+                    evidence_count=len(node_evidence),
+                    evidence=[
+                        {
+                            "id": record.id,
+                            "tool": record.tool,
+                            "args": record.args,
+                            "content": record.content,
+                            "created_at": record.created_at,
+                        }
+                        for record in node_evidence
+                    ],
+                )
 
             log.info(
                 "sop_node_end",

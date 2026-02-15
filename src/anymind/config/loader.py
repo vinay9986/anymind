@@ -9,6 +9,7 @@ from anymind.config.schemas import MCPConfig, ModelConfig
 
 MODEL_CONFIG_ENV = "AM_MODEL_CONFIG"
 MCP_CONFIG_ENV = "AM_MCP_CONFIG"
+PRICING_CONFIG_ENV = "AM_PRICING_CONFIG"
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 

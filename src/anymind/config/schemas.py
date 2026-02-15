@@ -11,6 +11,13 @@ class CacheConfig(BaseModel):
     ttl_seconds: int = 300
 
 
+class PricingConfig(BaseModel):
+    prices_per_1k_tokens: Dict[str, Dict[str, float]] = Field(default_factory=dict)
+    default: Dict[str, float] = Field(
+        default_factory=lambda: {"input": 0.0, "output": 0.0}
+    )
+
+
 class SearchConfig(BaseModel):
     provider: str = "kagi"
     kagi_api_key: Optional[str] = None
@@ -38,6 +45,9 @@ class GIoTConfig(BaseModel):
     sim_decay: float = 0.03
     sim_min: float = 0.8
     vote_ratio: float = 0.6
+    temperature_step: float = 0.2
+    temperature_min: float = 0.2
+    temperature_max: float = 0.9
     trace_steps: bool = True
     trace_max_chars: int = 300
 

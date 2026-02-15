@@ -5,6 +5,7 @@ from typing import Any, Dict
 from anymind.runtime.evidence import EvidenceLedger, EvidenceRecord
 from anymind.runtime.messages import message_text
 from anymind.runtime.usage import normalize_usage_metadata
+from anymind.runtime.llm_errors import safe_ainvoke
 
 
 async def render_with_citations(
@@ -21,7 +22,7 @@ async def render_with_citations(
         "Do not invent citations. Keep the answer concise.\n\n"
         f"Draft:\n{draft}\n\nEvidence ledger:\n{summary}"
     )
-    message = await model_client.ainvoke(
-        [("system", "Add citations."), ("user", prompt)]
+    message = await safe_ainvoke(
+        model_client, [("system", "Add citations."), ("user", prompt)]
     )
     return message_text(message), normalize_usage_metadata(model_name, [message])

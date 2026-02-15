@@ -14,6 +14,7 @@ from anymind.agents.agot.nested_graph import (
     create_empty_graph,
     create_root_graph,
 )
+from anymind.runtime.llm_errors import raise_if_llm_http_error
 
 
 def _coerce_final_answer(value: Any) -> str:
@@ -198,7 +199,7 @@ class AGOTAlgorithm:
     ) -> None:
         if not tasks or self._halt():
             return
-        await asyncio.gather(
+        results = await asyncio.gather(
             *[
                 self._process_node(
                     thought=t, query=query, graph=graph, current_depth=current_depth
@@ -207,6 +208,9 @@ class AGOTAlgorithm:
             ],
             return_exceptions=True,
         )
+        for result in results:
+            if isinstance(result, BaseException):
+                raise_if_llm_http_error(result)
 
     async def _process_node(
         self, *, thought: Task, query: str, graph: NestedGraph, current_depth: int
@@ -245,6 +249,7 @@ class AGOTAlgorithm:
                     answer = await self.mappings.eval(thought, graph, query)
                 graph.set_node_answer(thought.heritage, answer)
         except Exception as exc:
+            raise_if_llm_http_error(exc)
             self.log.error(
                 "agot_node_error",
                 thought_heritage=str(thought.heritage),

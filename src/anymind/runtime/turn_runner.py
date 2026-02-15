@@ -114,6 +114,22 @@ class TurnRunner:
                     session.chat_history = session.chat_history[-40:]
 
             evidence_records = session.evidence_ledger.recent()
+            evidence_id_list = result.get("evidence_ids")
+            if evidence_id_list:
+                by_id = {record.id: record for record in session.evidence_ledger.all()}
+                filtered: list[Any] = []
+                for eid in evidence_id_list:
+                    record = by_id.get(str(eid))
+                    if record is not None:
+                        filtered.append(record)
+                if filtered:
+                    evidence_records = filtered
+            sop_cfg = (
+                session.model_config.sop if session.agent_name == "sop_agent" else None
+            )
+            evidence_output_records = evidence_records
+            if sop_cfg is not None and bool(getattr(sop_cfg, "include_evidence", True)):
+                evidence_output_records = session.evidence_ledger.recent()
             if evidence_records:
                 if pause_event is not None:
                     await pause_event.wait()
@@ -155,7 +171,7 @@ class TurnRunner:
                         "args": record.args,
                         "content": summarize_for_display(record),
                     }
-                    for record in evidence_records
+                    for record in evidence_output_records
                 ],
             }
         finally:

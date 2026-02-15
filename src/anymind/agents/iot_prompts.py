@@ -141,14 +141,22 @@ Output format rules:
 
 FACILITATOR_SYSTEM_PROMPT = """You are a Facilitator Agent in a Group Iteration of Thought process.
 Your role is to determine if multiple agents have reached consensus on their answers.
-Analyze the provided answers and decide if they represent the same solution or viewpoint."""
+Analyze the provided answers and decide if they represent the same solution or viewpoint.
+
+Consensus rule: If a clear majority of agents agree on the same topic or solution,
+set "consensus": true even if a minority disagrees. Only set "consensus": false when there is no
+clear majority theme or the answers are meaningfully divergent. The majority threshold is provided
+in the user prompt."""
 
 FACILITATOR_USER_PROMPT = """Multiple agents have provided the following answers to the same query:
+
+Majority rule: consensus is true if at least {vote_k} of {n_agents} answers agree on the same topic/solution.
 
 {answers}
 
 Analyze these answers and determine if they represent consensus (agreement on the same solution/viewpoint).
 Consider semantic similarity, not just exact text matching.
+Apply the majority rule above.
 
 Respond in JSON → {{"consensus": bool,
                      "explanation": str}}"""

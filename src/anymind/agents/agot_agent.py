@@ -26,6 +26,7 @@ from anymind.runtime.validated_json import (
     ValidatedJsonResult,
     generate_validated_json_with_calls,
 )
+from anymind.runtime.llm_errors import safe_ainvoke
 
 
 class AGoTAgent:
@@ -77,8 +78,9 @@ class _AGoTRuntime:
     async def _call_planner(
         self, system_prompt: str, user_prompt: str
     ) -> tuple[str, Optional[dict[str, int]]]:
-        message = await self._context.model_client.ainvoke(
-            [("system", system_prompt), ("user", user_prompt)]
+        message = await safe_ainvoke(
+            self._context.model_client,
+            [("system", system_prompt), ("user", user_prompt)],
         )
         usage = getattr(message, "usage_metadata", None)
         return message_text(message), usage
@@ -86,8 +88,9 @@ class _AGoTRuntime:
     async def _call_fix(
         self, system_prompt: str, user_prompt: str
     ) -> tuple[str, Optional[dict[str, int]]]:
-        message = await self._context.model_client.ainvoke(
-            [("system", system_prompt), ("user", user_prompt)]
+        message = await safe_ainvoke(
+            self._context.model_client,
+            [("system", system_prompt), ("user", user_prompt)],
         )
         usage = getattr(message, "usage_metadata", None)
         return message_text(message), usage
@@ -106,8 +109,11 @@ class _AGoTRuntime:
         run_config["configurable"] = cfg
 
         async with self._tool_pool.acquire() as agent:
-            result = await agent.ainvoke(
-                {"messages": [("user", user_prompt)]}, config=run_config
+            result = await safe_ainvoke(
+                agent,
+                {"messages": [("user", user_prompt)]},
+                config=run_config,
+                llm_only=False,
             )
             messages = result.get("messages", [])
             if not messages:

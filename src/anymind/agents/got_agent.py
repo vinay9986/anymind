@@ -22,6 +22,7 @@ from anymind.agents.tool_agent_pool import ToolAgentPool
 from anymind.agents.usage_tracker import UsageBudgetTracker
 from anymind.config.schemas import GoTConfig as GoTSettings
 from anymind.runtime.validated_json import generate_validated_json
+from anymind.runtime.llm_errors import safe_ainvoke
 
 
 class GoTAgent:
@@ -79,15 +80,19 @@ class _GoTRuntime:
         self, *, user_prompt: str, config: Optional[dict[str, Any]]
     ) -> tuple[str, Optional[dict[str, int]]]:
         if self._tool_pool is None:
-            message = await self._context.model_client.ainvoke(
-                [("system", TASK_EXECUTION_SYS_PROMPT), ("user", user_prompt)]
+            message = await safe_ainvoke(
+                self._context.model_client,
+                [("system", TASK_EXECUTION_SYS_PROMPT), ("user", user_prompt)],
             )
             usage = getattr(message, "usage_metadata", None)
             return message_text(message), usage
 
         async with self._tool_pool.acquire() as agent:
-            result = await agent.ainvoke(
-                {"messages": [("user", user_prompt)]}, config=config
+            result = await safe_ainvoke(
+                agent,
+                {"messages": [("user", user_prompt)]},
+                config=config,
+                llm_only=False,
             )
             messages = result.get("messages", [])
             if not messages:

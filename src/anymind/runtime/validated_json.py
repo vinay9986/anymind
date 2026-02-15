@@ -15,6 +15,7 @@ from anymind.runtime.validation_prompts import (
     extract_keep_unchanged_fields,
     extract_keep_unchanged_sections,
 )
+from anymind.runtime.llm_errors import safe_ainvoke
 
 import structlog
 
@@ -86,8 +87,8 @@ async def _call_model(
         or getattr(model_client, "name", None)
         or "unknown"
     )
-    message = await model_client.ainvoke(
-        [("system", system_prompt), ("user", user_prompt)]
+    message = await safe_ainvoke(
+        model_client, [("system", system_prompt), ("user", user_prompt)]
     )
     usage = getattr(message, "usage_metadata", None)
     return _extract_assistant_text(message), usage

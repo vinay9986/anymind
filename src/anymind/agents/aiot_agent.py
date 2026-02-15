@@ -39,6 +39,7 @@ from anymind.runtime.validated_json import (
     generate_validated_json,
     generate_validated_json_with_calls,
 )
+from anymind.runtime.llm_errors import raise_if_llm_http_error, safe_ainvoke
 
 
 class AIoTAgent:
@@ -70,8 +71,11 @@ class _AIoTRuntime:
     async def _call_worker(
         self, *, user_prompt: str, config: Optional[dict[str, Any]]
     ) -> tuple[str, Optional[dict[str, int]]]:
-        result = await self._tool_agent.ainvoke(
-            {"messages": [("user", user_prompt)]}, config=config
+        result = await safe_ainvoke(
+            self._tool_agent,
+            {"messages": [("user", user_prompt)]},
+            config=config,
+            llm_only=False,
         )
         messages = result.get("messages", [])
         if not messages:
@@ -83,8 +87,9 @@ class _AIoTRuntime:
     async def _call_fix(
         self, system_prompt: str, user_prompt: str
     ) -> tuple[str, Optional[dict[str, int]]]:
-        message = await self._context.model_client.ainvoke(
-            [("system", system_prompt), ("user", user_prompt)]
+        message = await safe_ainvoke(
+            self._context.model_client,
+            [("system", system_prompt), ("user", user_prompt)],
         )
         usage = getattr(message, "usage_metadata", None)
         return message_text(message), usage
@@ -310,6 +315,7 @@ class _AIoTRuntime:
                 explanations: list[str] = [""]
                 for result in results:
                     if isinstance(result, BaseException):
+                        raise_if_llm_http_error(result)
                         continue
                     response, explanation, usage_list = result
                     if response:

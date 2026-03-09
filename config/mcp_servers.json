@@ -9,5 +9,13 @@
       "ONNX_MAX_LENGTH": "256",
       "ONNX_EMBED_BATCH_SIZE": "1"
     }
+  },
+  "google-drive": {
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["@piotr-agier/google-drive-mcp"],
+    "env": {
+      "GOOGLE_DRIVE_OAUTH_CREDENTIALS": "/Users/pazuzu/workDock/gcp-oauth.keys.json"
+    }
   }
 }

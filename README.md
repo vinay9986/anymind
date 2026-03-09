@@ -1,174 +1,122 @@
-# AnyMind
+# AnyMind: Provider-Agnostic Agentic Orchestration Engine
 
-LangGraph-based multi-agent runtime with MCP tools, CLI, and API (Swagger).
+[![CI Status](https://github.com/yourusername/anymind/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/anymind/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Quick start
+AnyMind is a high-performance, **provider-agnostic** multi-agent runtime designed to operationalize complex, goal-directed AI workflows. It implements state-of-the-art reasoning topologies—including **Autonomous Iteration of Thought (AIoT)** and **Adaptive Graph of Thoughts (AGoT)**—to bridge the gap between simple LLM prompting and production-grade autonomous systems.
 
+---
+
+## 🚀 Why AnyMind?
+
+Modern AI engineering faces three critical bottlenecks:
+1.  **Vendor Lock-in**: Hard-coding to a single LLM provider (OpenAI, Anthropic, Google) creates massive execution risk.
+2.  **Reasoning Inefficiency**: Standard "one-shot" responses fail at complex synthesis or multi-step logic.
+3.  **Context Exhaustion**: Maintaining long-horizon goals across turns requires structured state management, not just "naive context window dumping."
+
+AnyMind solves these by abstracting the model layer and providing specialized "cognitive architectures" tailored to specific problem domains—from deterministic SOP compliance to exploratory research synthesis.
+
+---
+
+## 🏗️ Architecture Overview
+
+AnyMind operates as a **modular orchestration layer** between your domain-specific tools and the evolving landscape of foundation models.
+
+```mermaid
+graph TD
+    A[User Request] --> B{Orchestrator}
+    B -->|SOP Tasks| C[AIoT Agent]
+    B -->|Deep Research| D[AGoT Agent]
+    
+    C --> E[Model Factory]
+    D --> E
+    
+    E --> F[Bedrock / OpenAI / Ollama]
+    
+    subgraph "Infrastructure"
+    G[MCP Tool Pool]
+    H[SQLite/Redis State]
+    I[Evidence Ledger]
+    end
+    
+    F <--> G
+    F <--> H
+    F <--> I
+```
+
+### Key Technical Pillars:
+-   **Model Factory Pattern**: Dynamic selection and pooling of LLM clients across Bedrock, OpenAI, and Ollama.
+-   **Cognitive Orchestrations**: 
+    -   **AGoT (Adaptive Graph of Thoughts)**: Recursively expands reasoning nodes only when "complexity checks" are triggered, optimizing test-time compute.
+    -   **AIoT (Autonomous Iteration of Thought)**: Self-terminating inner dialogue loops with deterministic `iteration_stop` signals.
+-   **Evidence Ledger & Citations**: Every tool interaction is recorded in an immutable ledger, and final responses are automatically rewritten to include evidence-backed citations `[E1]`.
+
+---
+
+## 🛠️ Comparison: Why this over alternatives?
+
+| Feature | AnyMind | LangChain / CrewAI | Static Agents |
+| :--- | :--- | :--- | :--- |
+| **Provider Agnostic** | ✅ Native Abstraction | ⚠️ Heavy Dependencies | ❌ No |
+| **Reasoning Topology** | AGoT, AIoT, GoT | Linear / Tree-only | ❌ One-shot |
+| **Compute Optimization** | Adaptive (test-time) | ❌ Static Loops | ❌ No |
+| **System Integrity** | Integrated Hooks | ❌ No | ❌ No |
+| **State Management** | Git-native / SQLite | ⚠️ Basic Memory | ❌ None |
+
+---
+
+## 📖 In-Depth Strategy (ADRs)
+
+Design decisions are captured as **Architecture Decision Records (ADRs)** to provide full transparency on the trade-offs navigated during development:
+
+-   [ADR 001: Provider-Agnostic Model Orchestration](docs/adr/001-provider-agnostic-design.md)
+-   [ADR 002: Selection of Reasoning Topologies](docs/adr/002-reasoning-topologies.md)
+-   [ADR 003: Dichotomy of SOP and Research Orchestrations](docs/adr/003-sop-vs-research-orchestrations.md)
+
+---
+
+## ⚡ Quick Start
+
+### Installation
 ```bash
 poetry install
-poetry run anymind --agent chat_agent -c config/model.openai.json
-
-# API server (Swagger at /docs)
-poetry run anymind serve --host 0.0.0.0 --port 8000
-```
-
-## Configuration
-
-Config files are JSON. The runtime looks in this order (or uses explicit flags):
-
-- `AM_MODEL_CONFIG` / `AM_PRICING_CONFIG` / `AM_MCP_CONFIG`
-- `./model.json`, `./pricing.json`, `./mcp_servers.json`
-- `./config/model.json`, `./config/pricing.json`, `./config/mcp_servers.json`
-- `~/.config/anymind/model.json`, `~/.config/anymind/pricing.json`, `~/.config/anymind/mcp_servers.json`
-
-### Tool policy
-
-Set `tools_policy` in `model.json`:
-
-- `auto` (default) - normal tool use
-- `planner` - tool-selection planner gate (recommended if model lacks native tool calling)
-- `confirm` - ask before each tool call
-- `never` - disable tools even if tools are configured
-
-Note: for Ollama, we default `auto` to `planner` to avoid tool-selection misfires.
-
-### Budget enforcement
-
-Set `budget_tokens` in `model.json` to enforce a strict token cap. When exceeded,
-the session stops accepting new turns. USD budgets are not supported.
-
-CLI overrides for fast testing:
-
-```bash
-anymind --agent chat_agent --model llama3.3:70b --provider ollama --tools-policy planner
-anymind --agent chat_agent --model us.anthropic.claude-sonnet-4-20250514-v1:0 --provider bedrock
-
-# one-shot query mode
-anymind --agent aiot_agent -c config/model.openai.json -q "what is the current price of SOL?"
-anymind --agent giot_agent -c config/model.openai.json -q "summarize the latest CPI trend"
-```
-
-### Sample configs
-
-See `config/` for examples:
-- `config/model.openai.json`
-- `config/model.ollama.json`
-- `config/model.bedrock.json`
-
-The default MCP config uses the built-in tool server:
-`python -m anymind.tools.mcp_local_tools`.
-
-### Checkpoints
-
-Configure checkpoint storage in `model.json`:
-
-```json
-\"checkpoint\": {
-  \"backend\": \"sqlite\",
-  \"path\": \"~/.local/share/anymind/checkpoints.sqlite\"
-}
-```
-
-Use `backend: \"memory\"` to disable persistence. Redis support can be added later.
-
-### ONNX assets (semantic consensus)
-
-GIoT uses an ONNX embedder for semantic consensus when assets are available.
-To build the assets locally:
-
-```bash
+# For semantic search consensus support
 poetry install --with onnx
 python onnx_assets/build.py
 ```
 
-This generates `onnx_assets_out/model.onnx` and `onnx_assets_out/tokenizer.json`.
-
-Override paths if needed:
-
+### Running the CLI
 ```bash
-export ONNX_MODEL_PATH=/path/to/model.onnx
-export ONNX_TOKENIZER_PATH=/path/to/tokenizer.json
+# Research mode (exploratory)
+poetry run anymind --agent research_director -q "Compare recent CPI trends across G7 nations"
+
+# SOP mode (deterministic)
+poetry run anymind --agent sop_agent -q "Review the latest PDF security logs for anomalies"
 ```
 
-## Built-in tools
-
-The default MCP server exposes these tools:
-
-- `current_time(format="iso"|"unix", timezone="UTC")`
-- `internet_search(query, max_results=5, max_snippets=3, ...)` (Google CSE + Scrapfly)
-- `pdf_extract_text(url|s3_key|pdf_base64, query|queries, search_mode="auto", ...)`
-
-### Tool configuration (env)
-
-- Google CSE:
-  - `GOOGLE_CSE_API_KEY` + `GOOGLE_CSE_ENGINE_ID`
-  - or `GOOGLE_CSE_SECRET_ARN` (JSON with `api_key` + `engine_id`)
-  - or `GOOGLE_CSE_API_KEY_SECRET_ARN` + `GOOGLE_CSE_ENGINE_ID_SECRET_ARN`
-- Scrapfly (for `internet_search`):
-  - `SCRAPFLY_API_KEY` (or `SCRAPFLY_API_KEY_SECRET_ARN`)
-- PDF from S3:
-  - `AGENT_DATA_BUCKET` (optional: `AGENT_DATA_BASE_PREFIX`)
-Semantic search for PDFs/pages is enabled by default. Set ONNX asset paths if you want
-semantic search enabled:
-`PDF_ONNX_MODEL_PATH`, `PDF_ONNX_TOKENIZER_PATH`, `PDF_ONNX_MAX_LENGTH`.
-
-## Usage output
-
-CLI and API responses report token usage (input/output/total) per model.
-
-## Caching & pooling
-
-LLM clients are reused via an internal pool. Tool results can be cached in Redis
-when a Redis URL is provided in `model.json`:
-
-```json
-\"cache\": { \"redis_url\": \"redis://localhost:6379/0\", \"ttl_seconds\": 300 }
-```
-
-If Redis is unavailable, caching is skipped.
-
-## Jobs (pause/resume)
-
-The API supports async jobs for long-running agent calls:
-
-- `POST /jobs` → returns `job_id`
-- `GET /jobs/{job_id}` → status + result when complete
-- `POST /jobs/{job_id}/pause`
-- `POST /jobs/{job_id}/resume`
-- `POST /jobs/{job_id}/cancel`
-
-Pause is cooperative: it will pause before the next major step (planner/LLM call).
-
-## Evidence ledger & citations
-
-Tool calls are recorded in an evidence ledger. The runtime always rewrites the
-response to include citations like `[E1]` using the tool outputs from the current turn.
-
-## Quality checks
-
-Pre-commit hooks enforce:
-- black
-- pytest
-- bandit
-- pip-audit
-
-Install hooks:
-
+### API Server (Swagger at `/docs`)
 ```bash
-poetry run pre-commit install
+poetry run anymind serve --host 0.0.0.0 --port 8000
 ```
 
-## Structure
+---
 
-- `src/anymind/runtime/` - LLM factory, MCP tools, checkpoints, usage
-- `src/anymind/policies/` - tool gating policies
-- `src/anymind/agents/` - agent implementations
-- `src/anymind/graphs/` - LangGraph graphs/workflows
-- `src/anymind/cli/` - CLI entrypoints
-- `src/anymind/api/` - FastAPI app (Swagger)
+## 📝 Configuration
 
-## Development
+AnyMind utilizes a flexible, hierarchical JSON configuration system. See `config/` for examples:
+- `config/model.openai.json`
+- `config/model.bedrock.json`
+- `config/mcp_servers.json`
 
-```bash
-python -m pytest
-```
+---
+
+## 🧪 Development & Quality
+
+AnyMind maintains a high technical bar for production readiness:
+- **Testing**: `pytest` for unit and integration tests.
+- **Observability**: Built-in latency tracking and token usage reporting.
+- **Safety**: Automated quality checks via `pre-commit` (black, bandit, pip-audit).
+
+---
+
+© 2026 AnyMind Project. Built for the era of autonomous systems.

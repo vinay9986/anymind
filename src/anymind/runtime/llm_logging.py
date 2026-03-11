@@ -75,7 +75,9 @@ class LLMRequestLogger(BaseCallbackHandler):
             for batch in response.generations or []:
                 for generation in batch:
                     message = getattr(generation, "message", None)
-                    usage = getattr(message, "usage_metadata", None) if message else None
+                    usage = (
+                        getattr(message, "usage_metadata", None) if message else None
+                    )
                     if usage:
                         token_usage = usage
                         break
@@ -83,8 +85,12 @@ class LLMRequestLogger(BaseCallbackHandler):
                     break
         if not token_usage:
             return
-        input_tokens = token_usage.get("prompt_tokens", token_usage.get("input_tokens", 0))
-        output_tokens = token_usage.get("completion_tokens", token_usage.get("output_tokens", 0))
+        input_tokens = token_usage.get(
+            "prompt_tokens", token_usage.get("input_tokens", 0)
+        )
+        output_tokens = token_usage.get(
+            "completion_tokens", token_usage.get("output_tokens", 0)
+        )
         get_usage_store().add(
             session_id=session_id,
             model=self._model,

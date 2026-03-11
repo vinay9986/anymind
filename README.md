@@ -1,122 +1,102 @@
-# AnyMind: Provider-Agnostic Agentic Orchestration Engine
+# AnyMind
 
-[![CI Status](https://github.com/yourusername/anymind/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/anymind/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+AnyMind is a provider-agnostic multi-agent orchestration runtime with a CLI, a FastAPI service, MCP tool integration, evidence capture, citation rewriting, and multiple reasoning strategies. It lets you route the same workload through AIoT, GIoT, AGoT, GoT, the research agent, or the SOP agent without hard-coding to one model vendor.
 
-AnyMind is a high-performance, **provider-agnostic** multi-agent runtime designed to operationalize complex, goal-directed AI workflows. It implements state-of-the-art reasoning topologies—including **Autonomous Iteration of Thought (AIoT)** and **Adaptive Graph of Thoughts (AGoT)**—to bridge the gap between simple LLM prompting and production-grade autonomous systems.
+Search terms: multi-agent orchestration, provider-agnostic AI agents, LangGraph runtime, AIoT, GIoT, AGoT, Graph of Thoughts, MCP tools, evidence-backed agents, FastAPI AI agent server.
 
----
+## Why AnyMind
 
-## 🚀 Why AnyMind?
+- Switch model providers through JSON config. The runtime builds chat models through LangChain's `init_chat_model`, and the repo ships example configs for OpenAI, AWS Bedrock, and Ollama.
+- Choose the reasoning shape that matches the job. Simple iterative workflows, parallel temperature sweeps, graph-based reasoning, research decomposition, and SOP execution all live behind one runtime.
+- Keep tool use grounded. MCP tool results are intercepted, logged, and added to an evidence ledger before optional citation rewriting.
+- Reuse the same orchestration core from the terminal or over HTTP. The CLI and the FastAPI app both go through the same `Orchestrator`.
+- Control tool exposure at runtime. Tool policies support always-on, planner-selected, confirm-before-run, and no-tools modes.
 
-Modern AI engineering faces three critical bottlenecks:
-1.  **Vendor Lock-in**: Hard-coding to a single LLM provider (OpenAI, Anthropic, Google) creates massive execution risk.
-2.  **Reasoning Inefficiency**: Standard "one-shot" responses fail at complex synthesis or multi-step logic.
-3.  **Context Exhaustion**: Maintaining long-horizon goals across turns requires structured state management, not just "naive context window dumping."
+## Quick Start
 
-AnyMind solves these by abstracting the model layer and providing specialized "cognitive architectures" tailored to specific problem domains—from deterministic SOP compliance to exploratory research synthesis.
+Install the project:
 
----
-
-## 🏗️ Architecture Overview
-
-AnyMind operates as a **modular orchestration layer** between your domain-specific tools and the evolving landscape of foundation models.
-
-```mermaid
-graph TD
-    A[User Request] --> B{Orchestrator}
-    B -->|SOP Tasks| C[AIoT Agent]
-    B -->|Deep Research| D[AGoT Agent]
-    
-    C --> E[Model Factory]
-    D --> E
-    
-    E --> F[Bedrock / OpenAI / Ollama]
-    
-    subgraph "Infrastructure"
-    G[MCP Tool Pool]
-    H[SQLite/Redis State]
-    I[Evidence Ledger]
-    end
-    
-    F <--> G
-    F <--> H
-    F <--> I
-```
-
-### Key Technical Pillars:
--   **Model Factory Pattern**: Dynamic selection and pooling of LLM clients across Bedrock, OpenAI, and Ollama.
--   **Cognitive Orchestrations**: 
-    -   **AGoT (Adaptive Graph of Thoughts)**: Recursively expands reasoning nodes only when "complexity checks" are triggered, optimizing test-time compute.
-    -   **AIoT (Autonomous Iteration of Thought)**: Self-terminating inner dialogue loops with deterministic `iteration_stop` signals.
--   **Evidence Ledger & Citations**: Every tool interaction is recorded in an immutable ledger, and final responses are automatically rewritten to include evidence-backed citations `[E1]`.
-
----
-
-## 🛠️ Comparison: Why this over alternatives?
-
-| Feature | AnyMind | LangChain / CrewAI | Static Agents |
-| :--- | :--- | :--- | :--- |
-| **Provider Agnostic** | ✅ Native Abstraction | ⚠️ Heavy Dependencies | ❌ No |
-| **Reasoning Topology** | AGoT, AIoT, GoT | Linear / Tree-only | ❌ One-shot |
-| **Compute Optimization** | Adaptive (test-time) | ❌ Static Loops | ❌ No |
-| **System Integrity** | Integrated Hooks | ❌ No | ❌ No |
-| **State Management** | Git-native / SQLite | ⚠️ Basic Memory | ❌ None |
-
----
-
-## 📖 In-Depth Strategy (ADRs)
-
-Design decisions are captured as **Architecture Decision Records (ADRs)** to provide full transparency on the trade-offs navigated during development:
-
--   [ADR 001: Provider-Agnostic Model Orchestration](docs/adr/001-provider-agnostic-design.md)
--   [ADR 002: Selection of Reasoning Topologies](docs/adr/002-reasoning-topologies.md)
--   [ADR 003: Dichotomy of SOP and Research Orchestrations](docs/adr/003-sop-vs-research-orchestrations.md)
-
----
-
-## ⚡ Quick Start
-
-### Installation
 ```bash
 poetry install
-# For semantic search consensus support
+```
+
+Optional: build ONNX assets for semantic similarity helpers used by some reasoning flows and the bundled local MCP tools:
+
+```bash
 poetry install --with onnx
 python onnx_assets/build.py
 ```
 
-### Running the CLI
-```bash
-# Research mode (exploratory)
-poetry run anymind --agent research_director -q "Compare recent CPI trends across G7 nations"
+Run the research agent from the CLI:
 
-# SOP mode (deterministic)
-poetry run anymind --agent sop_agent -q "Review the latest PDF security logs for anomalies"
+```bash
+poetry run anymind --agent research_agent -q "Compare recent CPI trends across G7 nations"
 ```
 
-### API Server (Swagger at `/docs`)
+Run the SOP agent with a JSON file:
+
+```bash
+poetry run anymind --agent sop_agent -q "@/absolute/path/to/sop.json"
+```
+
+Start the FastAPI service:
+
 ```bash
 poetry run anymind serve --host 0.0.0.0 --port 8000
 ```
 
----
+If you plan to use the bundled `internet_search` MCP tool, configure search credentials first:
 
-## 📝 Configuration
+- Kagi: set `KAGI_API_KEY` or populate `search.kagi_api_key` in the model config
+- Scrapfly: set `SCRAPFLY_API_KEY` or `SCRAPFLY_API_KEY_SECRET_ARN`
 
-AnyMind utilizes a flexible, hierarchical JSON configuration system. See `config/` for examples:
-- `config/model.openai.json`
-- `config/model.bedrock.json`
-- `config/mcp_servers.json`
+Without those credentials, the bundled `local_tools` server does not register `internet_search`. `pdf_extract_text` and `current_time` do not require those search API keys.
 
----
+## Agent Catalog
 
-## 🧪 Development & Quality
+| Agent name | Purpose |
+| --- | --- |
+| `research_agent` | Plans probe batches and delegates sub-questions to other reasoning runtimes before synthesizing a final answer. |
+| `sop_agent` | Executes JSON SOP graphs, optionally optimizes them, and can choose per-node solving algorithms. |
+| `aiot_agent` | Brain/worker loop with validated JSON outputs and optional tool use. |
+| `giot_agent` | Multi-agent iteration with temperature variation and facilitator-style convergence. |
+| `agot_agent` | Adaptive graph-of-thought execution with planner and worker pools. |
+| `got_agent` | Graph-of-thought search with branching, reflection, verification, and optional tool workers. |
 
-AnyMind maintains a high technical bar for production readiness:
-- **Testing**: `pytest` for unit and integration tests.
-- **Observability**: Built-in latency tracking and token usage reporting.
-- **Safety**: Automated quality checks via `pre-commit` (black, bandit, pip-audit).
+## Architecture Snapshot
 
----
+```mermaid
+flowchart LR
+    User[CLI user or API caller]
+    User --> Entry[CLI or FastAPI]
+    Entry --> Orchestrator[Orchestrator]
+    Orchestrator --> SessionFactory[SessionFactory]
+    SessionFactory --> LLM[LLMFactory]
+    SessionFactory --> MCP[MCPRegistryFactory]
+    SessionFactory --> CP[Checkpoint factory]
+    Orchestrator --> TurnRunner[TurnRunner]
+    TurnRunner --> Policy[Tool policy]
+    TurnRunner --> Agent[Agent runtime]
+    Agent --> Tools[MCP tools]
+    Tools --> Ledger[Evidence ledger]
+    TurnRunner --> Cite[Citation rewrite]
+    Cite --> Response[Response plus evidence]
+```
 
-© 2026 AnyMind Project. Built for the era of autonomous systems.
+The HTTP path adds a `SessionStore` and `JobManager`, but the core turn execution path stays the same.
+
+## Docs Map
+
+- [Getting Started](docs/getting-started.md): installation, config selection, CLI use, API startup, and tests.
+- [Architecture](docs/architecture.md): session lifecycle, tool interception, agent runtime flow, and persistence model.
+- [Reference](docs/reference.md): commands, agents, config discovery, tool policies, built-in MCP tools, and environment variables.
+- [ADR 001](docs/adr/001-provider-agnostic-design.md): provider abstraction rationale.
+- [ADR 002](docs/adr/002-reasoning-topologies.md): why multiple reasoning topologies exist.
+- [ADR 003](docs/adr/003-sop-vs-research-orchestrations.md): split between research and SOP execution.
+
+## Current Implementation Notes
+
+- The default checkpoint backend is SQLite when the async SQLite saver is available, with in-memory fallback otherwise.
+- Redis caching is supported for usage and tool-result caching, but Redis is not currently a configured checkpoint backend.
+- The bundled `local_tools` MCP server always exposes `current_time` and `pdf_extract_text`, and conditionally exposes `internet_search`.
+- `internet_search` is only registered by the bundled `local_tools` server when Kagi and Scrapfly credentials are available at process start.

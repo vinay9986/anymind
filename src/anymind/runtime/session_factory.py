@@ -28,6 +28,7 @@ from anymind.runtime.mcp_registry import (
 from anymind.runtime.session import Session
 from anymind.runtime.tool_validation import ensure_tools_have_descriptions
 
+
 class SessionFactory:
     def __init__(
         self,
@@ -115,11 +116,11 @@ class SessionFactory:
         agent_with_tools = None
         if model_cfg.tools_enabled and tools:
             agent_with_tools = agent_instance.build(
-                        AgentContext(
-                            model_config=model_cfg,
-                            tools=tools,
-                            tool_policy=tool_policy,
-                            model_client=model_client,
+                AgentContext(
+                    model_config=model_cfg,
+                    tools=tools,
+                    tool_policy=tool_policy,
+                    model_client=model_client,
                     checkpointer=checkpointer,
                 )
             )

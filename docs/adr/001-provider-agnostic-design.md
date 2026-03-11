@@ -1,19 +1,26 @@
 # ADR 001: Provider-Agnostic Model Orchestration
 
 ## Status
+
 Accepted
 
 ## Context
-The AI ecosystem is highly volatile, with market leadership shifting frequently between OpenAI, Anthropic, and Google. For enterprise-grade agentic workflows, hard-coding to a single model provider creates significant execution risk and vendor lock-in. Different tasks (e.g., creative writing vs. complex reasoning) often perform better on different foundation models.
+
+The runtime needs to support different chat model providers without forcing every agent and tool path to know provider-specific details.
+
+At the same time, the codebase already depends on LangChain and LangGraph primitives, so a realistic design should build on them instead of pretending they are absent.
 
 ## Decision
-I have implemented a strictly provider-agnostic runtime using a factory pattern (`llm_factory.py`) and a standardized tool-calling interface. The system abstracts away provider-specific message formats and tool-definition schemas.
+
+AnyMind centralizes model construction in `llm_factory.py` and treats provider choice as configuration. The runtime uses LangChain's `init_chat_model` as the portability layer, while keeping session creation, tool interception, evidence handling, and orchestration logic in project code.
 
 ## Consequences
-- **Portability**: Agents can be migrated between Bedrock, OpenAI, and Ollama by simply updating a JSON configuration.
-- **Resilience**: Outages or performance degradation in one provider can be mitigated by switching to another with zero code changes.
-- **Tradeoff**: I chose to sacrifice some provider-specific "beta" features (like specific prompt caching mechanisms) in favor of a clean, maintainable abstraction layer.
+
+- Switching between the provider examples in this repo is a configuration change, not an agent rewrite.
+- Provider-specific concerns stay concentrated in the model factory, config, and a few middleware/interceptor paths.
+- The project keeps the benefits of LangChain/LangGraph primitives without scattering provider branches through every runtime.
 
 ## Alternatives Considered
-- **Direct Integration**: Using provider-specific SDKs (e.g., `boto3` for Bedrock). Rejected due to high maintenance overhead and lack of portability.
-- **LangChain/LlamaIndex**: While powerful, these frameworks introduce significant "framework bloat" and can make it difficult to debug the underlying data flow. I chose a custom factory for maximum control over token efficiency and latency.
+
+- Provider-specific model clients throughout the codebase: rejected because it would duplicate logic across agents and increase maintenance cost.
+- A fully custom chat-model abstraction on top of raw SDKs: rejected because it would recreate functionality already provided by the LangChain layer used elsewhere in the project.

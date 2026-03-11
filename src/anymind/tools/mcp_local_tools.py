@@ -2,10 +2,8 @@ import os
 
 from mcp.server.fastmcp import FastMCP
 
-from anymind.tools.core_pdf import pdf_extract_text
-from anymind.tools.core_search import internet_search
-from anymind.tools.core_time import current_time
 from anymind.runtime.logging import configure_logging
+from anymind.tools.core_tools import register_core_tools
 
 _log_path = os.getenv("ANYMIND_LOG_PATH")
 _log_dir = os.getenv("ANYMIND_LOG_DIR")
@@ -18,9 +16,7 @@ if _log_path or _log_dir:
 
 mcp = FastMCP("local-tools")
 
-mcp.tool()(current_time)
-mcp.tool()(internet_search)
-mcp.tool()(pdf_extract_text)
+register_core_tools(mcp)
 
 
 if __name__ == "__main__":

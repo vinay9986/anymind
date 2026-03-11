@@ -1,19 +1,28 @@
-# ADR 003: Dichotomy of SOP and Research Orchestrations
+# ADR 003: Separate SOP and Research Orchestrations
 
 ## Status
+
 Accepted
 
 ## Context
-Agentic workflows generally fall into two categories: deterministic/repeatable processes and exploratory/open-ended discovery. Using a single agent for both leads to either over-exploration on simple tasks or under-exploration on complex ones.
+
+The repository supports both structured task execution and exploratory research. Those workflows need different coordination logic even when they share lower-level reasoning runtimes.
 
 ## Decision
-I have bifurcated the system into two primary orchestration modes:
-- **SOP Orchestration**: Optimized for linear, verified task completion (e.g., "follow this checklist"). Uses AIoT to iterate until a verification signal is met.
-- **Research Orchestration**: Optimized for deep exploration. Uses AGoT to dynamically expand its search graph when it encounters complex sub-topics, merging findings from multiple tools (Kagi, Scrapfly, etc.) into a cohesive synthesis.
+
+AnyMind keeps two higher-level orchestration modes:
+
+- **`sop_agent`** for executing JSON SOP graphs with node-level solving and optional optimization
+- **`research_agent`** for decomposing a question into probes, routing those probes to different reasoning runtimes, and synthesizing the result
+
+Both orchestrations sit on top of the shared agent catalog rather than embedding all behavior into one generalist runtime.
 
 ## Consequences
-- **Efficiency**: SOPs are handled with minimal token overhead.
-- **Depth**: Research tasks can drill deep into ambiguous problems without manual intervention.
+
+- SOP execution can stay explicit about graph structure, node dependencies, and refinement.
+- Research execution can focus on decomposition, probe batching, and synthesis.
+- The split keeps the code easier to reason about than a single runtime that tries to infer both modes from prompts alone.
 
 ## Alternatives Considered
-- **Single Generalist Agent**: Rejected because "one-size-fits-all" agents often hallucinate completions when they should be exploring, or waste tokens when they should be finishing.
+
+- One generalist orchestration layer: rejected because it would hide important control flow differences and make both modes harder to tune.

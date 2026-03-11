@@ -1,22 +1,31 @@
-# ADR 002: Selection of Reasoning Topologies (AIoT, GIoT, AGoT, GoT)
+# ADR 002: Selection of Reasoning Topologies
 
 ## Status
+
 Accepted
 
 ## Context
-Single-shot prompting is insufficient for complex, multi-step reasoning tasks. Different problem classes require different "cognitive architectures" to balance accuracy, latency, and token cost.
+
+Single-shot prompting is not a good fit for every workload in this repo. Research synthesis, SOP execution, iterative refinement, and graph exploration place different demands on the runtime.
 
 ## Decision
-AnyMind supports multiple reasoning topologies:
-- **Autonomous Iteration of Thought (AIoT)**: Self-terminating inner dialogue for standard tasks.
-- **Guided Iteration of Thought (GIoT)**: Fixed-step exploration for thoroughness.
-- **Graph of Thoughts (GoT)**: Non-linear reasoning allowing for branching and merging of thoughts.
-- **Adaptive Graph of Thoughts (AGoT)**: Dynamic DAG construction with LLM-driven complexity checks to optimize test-time compute.
+
+AnyMind exposes multiple reasoning topologies as first-class agent runtimes:
+
+- **AIoT** for iterative brain/worker loops
+- **GIoT** for parallel multi-agent exploration with convergence
+- **AGoT** for adaptive graph execution
+- **GoT** for graph-of-thought search with branching and verification
+
+Higher-level runtimes such as `research_agent` and `sop_agent` can delegate into those lower-level strategies as needed.
 
 ## Consequences
-- **Precision**: Heavy recursive reasoning (AGoT) is applied only when the LLM detects high complexity, saving tokens on trivial sub-tasks.
-- **Flexibility**: The system can adapt its thought process based on the incoming query type (e.g., simple lookup vs. complex synthesis).
+
+- The runtime can match the solving strategy to the task instead of forcing one shape onto every workload.
+- Research and SOP flows can reuse the same lower-level reasoning building blocks.
+- The tradeoff is added implementation complexity and a larger testing surface.
 
 ## Alternatives Considered
-- **Chain of Thought (CoT) Only**: Rejected as it cannot handle non-linear problems or parallel hypothesis exploration.
-- **Static Tree of Thoughts (ToT)**: Rejected because it lacks the ability to merge partial computations, which GoT handles via DAG structures.
+
+- Single general-purpose agent loop: rejected because it would blur important differences between research, iterative solving, and structured SOP execution.
+- Chain-of-thought only: rejected because it does not cover the branching and multi-agent behaviors already implemented in the repo.

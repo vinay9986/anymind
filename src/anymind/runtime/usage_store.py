@@ -19,7 +19,9 @@ class UsageSnapshot:
 
 
 class UsageStore:
-    def add(self, *, session_id: str, model: str, input_tokens: int, output_tokens: int) -> None:
+    def add(
+        self, *, session_id: str, model: str, input_tokens: int, output_tokens: int
+    ) -> None:
         raise NotImplementedError
 
     def get(self, session_id: str) -> UsageSnapshot:
@@ -32,7 +34,9 @@ class InMemoryUsageStore(UsageStore):
         self._totals: Dict[str, UsageTotals] = {}
         self._per_model: Dict[str, Dict[str, UsageTotals]] = {}
 
-    def add(self, *, session_id: str, model: str, input_tokens: int, output_tokens: int) -> None:
+    def add(
+        self, *, session_id: str, model: str, input_tokens: int, output_tokens: int
+    ) -> None:
         if not session_id:
             return
         with self._lock:
@@ -76,7 +80,9 @@ class RedisUsageStore(UsageStore):
     def _model_key(self, session_id: str) -> str:
         return f"{session_id}_models"
 
-    def add(self, *, session_id: str, model: str, input_tokens: int, output_tokens: int) -> None:
+    def add(
+        self, *, session_id: str, model: str, input_tokens: int, output_tokens: int
+    ) -> None:
         if not session_id:
             return
         input_key, output_key = self._totals_keys(session_id)
@@ -109,10 +115,14 @@ class RedisUsageStore(UsageStore):
                     continue
                 if key.endswith(":input"):
                     name = key[:-6]
-                    per_model.setdefault(name, UsageTotals()).input_tokens = int(value or 0)
+                    per_model.setdefault(name, UsageTotals()).input_tokens = int(
+                        value or 0
+                    )
                 elif key.endswith(":output"):
                     name = key[:-7]
-                    per_model.setdefault(name, UsageTotals()).output_tokens = int(value or 0)
+                    per_model.setdefault(name, UsageTotals()).output_tokens = int(
+                        value or 0
+                    )
         return UsageSnapshot(totals, per_model)
 
 

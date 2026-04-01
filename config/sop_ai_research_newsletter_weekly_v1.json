@@ -1,0 +1,88 @@
+{
+  "id": "sop_ai_research_newsletter_weekly_v1",
+  "name": "Weekly AI Research Newsletter",
+  "version": "1.1",
+  "description": "Gathers AI research papers, model releases, industry news, and open-source tools from the previous Sun–Sat week, then synthesises them into a polished markdown newsletter. Triggered manually each Sunday.",
+  "optimize": false,
+  "nodes": [
+    {
+      "id": "time_window",
+      "type": "builtin",
+      "function": "compute_time_window",
+      "window": "last_full_week"
+    },
+    {
+      "id": "gather_papers",
+      "inputs": {
+        "value": "Find AI and ML research papers published during the week of week_start to week_end (dates are in the upstream context)."
+      }
+    },
+    {
+      "id": "gather_models",
+      "inputs": {
+        "value": "Find AI model releases and announcements from the week of week_start to week_end (dates are in the upstream context)."
+      }
+    },
+    {
+      "id": "gather_industry",
+      "inputs": {
+        "value": "Find AI industry news from the week of week_start to week_end (dates are in the upstream context)."
+      }
+    },
+    {
+      "id": "curate_rank",
+      "allow_tools": false,
+      "inputs": {
+        "value": "Review all gathered material from upstream (research papers, model releases, industry news, open-source tools). Deduplicate, cross-link items that span categories, and rank by novelty, practical impact, and timeliness. Select the best items per category with a one-line editorial note each. Identify the single most significant story of the week as the lead story."
+      }
+    },
+    {
+      "id": "research_digest",
+      "inputs": {
+        "value": "For each paper in the curated shortlist (from upstream context), research it in depth and write the Research Papers section of the newsletter."
+      }
+    },
+    {
+      "id": "industry_digest",
+      "inputs": {
+        "value": "For each item in the curated shortlist (from upstream context), research it in depth and write the Industry & Business section of the newsletter."
+      }
+    },
+    {
+      "id": "tools_releases",
+      "inputs": {
+        "value": "For each item in the curated shortlist (from upstream context), research it in depth and write the Models & Releases and Open-Source Tools sections of the newsletter."
+      }
+    },
+    {
+      "id": "weekly_narrative",
+      "inputs": {
+        "value": "Using the curated shortlist from upstream context, research the lead story in depth and write three components: Executive Summary, Lead Story, and Connections & Trends."
+      }
+    },
+    {
+      "id": "final_newsletter",
+      "type": "output",
+      "allow_tools": false,
+      "inputs": {
+        "value": "Assemble the upstream components (executive summary, lead story, trends, research papers, industry news, models and tools) into the final weekly AI research newsletter in markdown."
+      }
+    }
+  ],
+  "edges": [
+    { "source": "time_window",      "target": "gather_papers" },
+    { "source": "time_window",      "target": "gather_models" },
+    { "source": "time_window",      "target": "gather_industry" },
+    { "source": "gather_papers",    "target": "curate_rank" },
+    { "source": "gather_models",    "target": "curate_rank" },
+    { "source": "gather_industry",  "target": "curate_rank" },
+    { "source": "curate_rank",      "target": "research_digest" },
+    { "source": "curate_rank",      "target": "industry_digest" },
+    { "source": "curate_rank",      "target": "tools_releases" },
+    { "source": "curate_rank",      "target": "weekly_narrative" },
+    { "source": "research_digest",  "target": "final_newsletter" },
+    { "source": "industry_digest",  "target": "final_newsletter" },
+    { "source": "tools_releases",   "target": "final_newsletter" },
+    { "source": "weekly_narrative", "target": "final_newsletter" }
+  ]
+}

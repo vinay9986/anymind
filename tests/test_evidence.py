@@ -73,6 +73,17 @@ def test_summarize_for_display_falls_back_to_regex() -> None:
         {},
         "See https://example.com at 2026-02-13T01:02:03Z.",
     )
+    # URL takes priority over timestamp in regex fallback
+    assert summarize_for_display(record) == "https://example.com"
+
+
+def test_summarize_for_display_falls_back_to_timestamp_regex() -> None:
+    ledger = EvidenceLedger()
+    record = ledger.add(
+        "internet_search",
+        {},
+        "Published on 2026-02-13T01:02:03Z.",
+    )
     assert summarize_for_display(record) == "2026-02-13T01:02:03Z"
 
 

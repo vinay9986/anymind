@@ -415,6 +415,15 @@ def _semantic_search_text(
     return (matches, "")
 
 
+_BLOCK_SIGNALS = ("429", "403", "captcha", "blocked", "access denied", "forbidden")
+
+
+def _is_block_error(err: str) -> bool:
+    """Return True when the error string looks like a site-level block or rate-limit."""
+    low = err.lower()
+    return any(s in low for s in _BLOCK_SIGNALS)
+
+
 def _scrapfly_request(
     *,
     api_key: str,
@@ -425,6 +434,7 @@ def _scrapfly_request(
     render_js: bool,
     timeout_seconds: float,
     extraction_model: str | None = None,
+    proxy_pool: str | None = None,
 ) -> dict[str, Any]:
     timeout_seconds = float(timeout_seconds or 0.0)
     if asp:
@@ -441,6 +451,7 @@ def _scrapfly_request(
         "render_js": "true" if render_js else "false",
         "retry": "false",
         "timeout": str(timeout_ms),
+        "proxy_pool": proxy_pool or "public_datacenter_pool",
     }
     if extraction_model:
         params["extraction_model"] = extraction_model
@@ -702,12 +713,38 @@ def _scrapfly_fetch_ai_data(
             f"Unsupported extraction_model '{extraction_model}'. Allowed: {allowed}"
         )
 
+    # Attempt order:
+    #   1. asp, no JS, datacenter  — fast and cheap
+    #   2. asp, JS,    datacenter  — JS fallback for dynamic pages
+    #   3. asp, JS,    residential — last resort when site blocks datacenter IPs (429/403)
     attempts = [
-        {"asp": True, "render_js": False, "mode": "asp"},
+        {
+            "asp": True,
+            "render_js": False,
+            "proxy_pool": "public_datacenter_pool",
+            "mode": "asp",
+        },
+        {
+            "asp": True,
+            "render_js": True,
+            "proxy_pool": "public_datacenter_pool",
+            "mode": "asp+js",
+        },
+        {
+            "asp": True,
+            "render_js": True,
+            "proxy_pool": "residential_pool",
+            "mode": "asp+js+residential",
+        },
     ]
 
     last_error: str | None = None
+    skip_to_residential = False
     for attempt in attempts:
+        # If a prior attempt hit a block/rate-limit, skip the remaining datacenter
+        # attempts and go straight to residential.
+        if skip_to_residential and attempt["proxy_pool"] != "residential_pool":
+            continue
         try:
             resp = _scrapfly_request(
                 api_key=api_key,
@@ -718,6 +755,7 @@ def _scrapfly_fetch_ai_data(
                 render_js=bool(attempt["render_js"]),
                 timeout_seconds=timeout_seconds,
                 extraction_model=extraction_model,
+                proxy_pool=str(attempt["proxy_pool"]),
             )
             text, meta = _scrapfly_extract_ai_data(
                 response=resp, api_key=api_key, timeout_seconds=timeout_seconds
@@ -736,6 +774,8 @@ def _scrapfly_fetch_ai_data(
             last_error = "Scrapfly AI extraction returned empty content."
         except Exception as exc:
             last_error = str(exc)
+            if _is_block_error(last_error):
+                skip_to_residential = True
             continue
 
     raise ValueError(last_error or "Scrapfly AI extraction failed.")
@@ -794,6 +834,18 @@ def _scrapfly_fetch_text(
             continue
 
     raise ValueError(last_error or "Scrapfly scrape failed.")
+
+
+# URL path patterns that indicate listing/index pages — heavy, slow, rarely useful.
+# Individual article/abstract pages from the same domain work fine.
+def _url_is_listing_page(url: str) -> bool:
+    """Return True if the URL is clearly a feed/syndication endpoint (never article content)."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except Exception:
+        return False
+    path = (parsed.path or "").lower().rstrip("/")
+    return path.endswith("/feed") or path.endswith("/rss") or path.endswith("/atom")
 
 
 def _url_looks_like_pdf(url: str) -> bool:
@@ -915,6 +967,9 @@ def _handle_internet_search(event: Mapping[str, Any]) -> list[dict[str, Any]]:
                 continue
             url = str(item.get("link", "") or "").strip()
             if not url:
+                continue
+            if _url_is_listing_page(url):
+                logger.info("internet_search_skip_listing_page", url=url)
                 continue
             collected.append(
                 {
@@ -1107,10 +1162,14 @@ def internet_search(
       Avoid filler like "how do I", "list of", etc.
     - Think like the source: use terms an expert page would use; try synonyms.
     - Avoid stuffing the query with long lists of keywords; overly long queries reduce relevance.
+    - ALWAYS start with a broad query (no domain filters). Let Kagi surface a diverse mix of
+      sources — news sites, blogs, papers, documentation — then refine if needed.
+    - NEVER use site: filters. They collapse results to a single domain's pages, which are
+      often dynamic/JS-rendered and fail to scrape. Broad queries surface individual article
+      and abstract pages that scrape reliably.
     - Use operators when helpful (syntax matters: no spaces after colons):
       - Quotes for exact phrases: "admission requirements"
       - Exclude terms: jaguar -car
-      - Domain filters: site:example.com or exclude a domain: -site:example.com
       - File type filters: cybersecurity report filetype:pdf
       - Alternatives: (college OR university) "admission requirements"   (OR must be capitalized)
       - Wildcard for unknown words: "the * of money"

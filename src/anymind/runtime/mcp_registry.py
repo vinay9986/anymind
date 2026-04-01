@@ -221,12 +221,16 @@ def cache_tool_interceptor(cache: CacheBackend, ttl_seconds: int) -> Any:
     return _interceptor
 
 
+# Tools that are utility calls (not research sources) and should not be recorded as evidence.
+_EVIDENCE_EXCLUDE_TOOLS: frozenset[str] = frozenset({"current_time"})
+
+
 async def evidence_tool_interceptor(
     request: MCPToolCallRequest, handler
 ) -> MCPToolCallResult:
     result = await handler(request)
     ledger = get_current_ledger()
-    if ledger is not None:
+    if ledger is not None and request.name not in _EVIDENCE_EXCLUDE_TOOLS:
         text = tool_result_to_text(result)
         if text:
             ledger.add(request.name, request.args, text)
@@ -281,6 +285,8 @@ async def tool_error_logging_interceptor(
 async def tool_call_logging_interceptor(
     request: MCPToolCallRequest, handler
 ) -> MCPToolCallResult:
+    from anymind.agents.iot_utils import sanitize_for_llm
+
     tool_call_id = getattr(request.runtime, "tool_call_id", None)
     logger.info(
         "tool_call_start",
@@ -303,6 +309,35 @@ async def tool_call_logging_interceptor(
         )
         raise
     duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+    # Sanitize tool result content before it enters LangGraph's message state.
+    # Scraped web content often contains null bytes / invalid control chars that
+    # cause LLM APIs to return HTTP 400 "could not parse JSON body".
+    if isinstance(result, ToolMessage):
+        content = result.content
+        if isinstance(content, str):
+            result = ToolMessage(
+                content=sanitize_for_llm(content),
+                tool_call_id=str(tool_call_id or "tool_call_id"),
+            )
+        elif isinstance(content, list):
+            new_items = []
+            changed = False
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    original = str(item.get("text") or "")
+                    cleaned = sanitize_for_llm(original)
+                    new_items.append(
+                        {**item, "text": cleaned} if cleaned != original else item
+                    )
+                    changed = changed or (cleaned != original)
+                else:
+                    new_items.append(item)
+            if changed:
+                result = ToolMessage(
+                    content=new_items, tool_call_id=str(tool_call_id or "tool_call_id")
+                )
+
     logger.info(
         "tool_call_result",
         tool=request.name,

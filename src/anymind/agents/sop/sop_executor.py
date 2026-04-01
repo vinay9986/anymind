@@ -10,14 +10,16 @@ import structlog
 
 from anymind.runtime.evidence import EvidenceLedger
 from anymind.agents.sop.brain_selector import select_brain_for_question
+from anymind.agents.sop.builtins import get_builtin  # registers builtins as side-effect
 from anymind.agents.sop.coverage_gate import evaluate_answer
 from anymind.agents.sop.sop_validation import get_node_question
+from anymind.agents.iot_utils import sanitize_for_llm
 
 
 @dataclass(frozen=True)
 class SopExecutionConfig:
     max_concurrency: int = 3
-    node_context_max_chars: int = 4000
+    node_context_max_chars: int = 560_000
     node_output_preview_chars: int = 2000
     include_evidence: bool = True
     refinement_enabled: bool = True
@@ -79,16 +81,14 @@ def _format_upstream_context(
     node_id: str,
     predecessors: list[str],
     node_results: dict[str, dict[str, Any]],
-    max_chars: int,
 ) -> str:
     if not predecessors:
         return ""
 
-    per_node = max(1, int(max_chars / max(1, len(predecessors))))
     upstream: list[dict[str, Any]] = []
     for pid in predecessors:
         res = node_results.get(pid, {})
-        content = str(res.get("content") or "").strip()
+        content = sanitize_for_llm(str(res.get("content") or "").strip())
         evidence_ids: list[str] = []
         for record in res.get("evidence") or []:
             if hasattr(record, "id"):
@@ -99,15 +99,12 @@ def _format_upstream_context(
             {
                 "node_id": pid,
                 "status": res.get("status"),
-                "content": _truncate(content, per_node),
+                "content": content,
                 "evidence_ids": evidence_ids,
             }
         )
 
-    rendered = json.dumps(
-        {"upstream": upstream}, ensure_ascii=False, indent=2, default=str
-    )
-    return _truncate(rendered, max_chars)
+    return json.dumps({"upstream": upstream}, ensure_ascii=False, indent=2, default=str)
 
 
 def _select_final_answer(
@@ -187,6 +184,39 @@ async def execute_sop(
                     "skipped": True,
                 }
 
+            if ntype == "builtin":
+                fn_name = str(node.get("function", "") or "").strip()
+                fn = get_builtin(fn_name)
+                if fn is None:
+                    return nid, {
+                        "status": "failed",
+                        "content": "",
+                        "node_type": ntype,
+                        "error": f"Unknown builtin: {fn_name!r}",
+                    }
+                try:
+                    content = fn(node, node_results)
+                    log.info(
+                        "sop_node_builtin",
+                        execution_id=execution_id,
+                        node_id=nid,
+                        function=fn_name,
+                        content_len=len(content),
+                    )
+                    return nid, {
+                        "status": "ok",
+                        "content": content,
+                        "node_type": "builtin",
+                        "algorithm": "builtin",
+                    }
+                except Exception as exc:
+                    return nid, {
+                        "status": "failed",
+                        "content": "",
+                        "node_type": "builtin",
+                        "error": str(exc),
+                    }
+
             if ntype == "input":
                 explicit = get_node_question(node, allow_fallback=False)
                 if not explicit:
@@ -222,7 +252,6 @@ async def execute_sop(
                 node_id=nid,
                 predecessors=predecessors,
                 node_results=node_results,
-                max_chars=config.node_context_max_chars,
             )
 
             def _build_query(question_text: str) -> str:

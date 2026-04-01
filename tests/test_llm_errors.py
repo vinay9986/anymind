@@ -1,6 +1,7 @@
 import pytest
 
 from anymind.runtime.llm_errors import (
+    ContextGuardedLLM,
     LLMHTTPError,
     _looks_like_llm_error,
     extract_http_status,
@@ -94,4 +95,57 @@ async def test_safe_ainvoke_raises_original_error() -> None:
 async def test_safe_ainvoke_success() -> None:
     target = AsyncTarget(None)
     result = await safe_ainvoke(target, llm_only=True)
+    assert result == {"ok": True}
+
+
+@pytest.mark.anyio
+async def test_context_guarded_llm_passes_through() -> None:
+    target = AsyncTarget(None)
+    guarded = ContextGuardedLLM(target, max_chars=100_000)
+    result = await guarded.ainvoke([("human", "hello")])
+    assert result == {"ok": True}
+
+
+@pytest.mark.anyio
+async def test_context_guarded_llm_delegates_attrs() -> None:
+    target = AsyncTarget(None)
+    target.custom_attr = "test_value"  # type: ignore[attr-defined]
+    guarded = ContextGuardedLLM(target)
+    assert guarded.custom_attr == "test_value"
+
+
+@pytest.mark.anyio
+async def test_context_guarded_llm_non_list_messages() -> None:
+    target = AsyncTarget(None)
+    guarded = ContextGuardedLLM(target, max_chars=1000)
+    # Non-list messages should pass through without compression
+    result = await guarded.ainvoke("simple string message")
+    assert result == {"ok": True}
+
+
+@pytest.mark.anyio
+async def test_safe_ainvoke_agent_call_sanitizes_messages() -> None:
+    target = AsyncTarget(None)
+    messages = [("human", "hello world")]
+    result = await safe_ainvoke(target, {"messages": messages}, llm_only=False)
+    assert result == {"ok": True}
+
+
+@pytest.mark.anyio
+async def test_safe_ainvoke_agent_call_with_object_messages() -> None:
+    class FakeMessage:
+        def __init__(self, content):
+            self.content = content
+
+    target = AsyncTarget(None)
+    messages = [FakeMessage("hello world")]
+    result = await safe_ainvoke(target, {"messages": messages}, llm_only=False)
+    assert result == {"ok": True}
+
+
+@pytest.mark.anyio
+async def test_safe_ainvoke_direct_llm_list_messages() -> None:
+    target = AsyncTarget(None)
+    messages = [("human", "hello")]
+    result = await safe_ainvoke(target, messages, llm_only=True)
     assert result == {"ok": True}

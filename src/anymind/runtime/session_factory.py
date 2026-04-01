@@ -25,6 +25,7 @@ from anymind.runtime.mcp_registry import (
     tool_call_logging_interceptor,
     tool_error_logging_interceptor,
 )
+from anymind.runtime.llm_errors import ContextGuardedLLM
 from anymind.runtime.session import Session
 from anymind.runtime.tool_validation import ensure_tools_have_descriptions
 
@@ -75,7 +76,7 @@ class SessionFactory:
             except FileNotFoundError:
                 mcp_cfg = MCPConfig()
 
-        model_client = self._llm_factory.get(model_cfg)
+        model_client = ContextGuardedLLM(self._llm_factory.get(model_cfg))
         tool_policy_name = model_cfg.tools_policy
         if model_cfg.model_provider == "ollama" and tool_policy_name == "auto":
             tool_policy_name = "planner"

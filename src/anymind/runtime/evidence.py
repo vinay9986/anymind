@@ -70,10 +70,10 @@ def summarize_for_display(record: EvidenceRecord) -> str:
 
     def _extract_value(data: Any) -> str:
         if isinstance(data, dict):
-            if "timestamp" in data:
-                return str(data.get("timestamp", "")).strip()
             if "url" in data:
                 return str(data.get("url", "")).strip()
+            if "timestamp" in data:
+                return str(data.get("timestamp", "")).strip()
             results = data.get("results")
             if isinstance(results, list):
                 for item in results:
@@ -96,12 +96,12 @@ def summarize_for_display(record: EvidenceRecord) -> str:
     if extracted:
         return extracted
 
-    ts_match = re.search(r"\d{4}-\d{2}-\d{2}T[0-9:.+-]+Z?", content)
-    if ts_match:
-        return ts_match.group(0)
     url_match = re.search(r"https?://[^\s\"']+", content)
     if url_match:
         return url_match.group(0)
+    ts_match = re.search(r"\d{4}-\d{2}-\d{2}T[0-9:.+-]+Z?", content)
+    if ts_match:
+        return ts_match.group(0)
     return ""
 
 

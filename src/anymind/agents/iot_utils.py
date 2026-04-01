@@ -227,6 +227,65 @@ def tool_feedback_from_ledger(
     return summary or f"{tool_label} No external tool results yet."
 
 
+def sanitize_for_llm(text: str) -> str:
+    """Strip characters that cause JSON serialization failures in LLM API requests.
+
+    Removes null bytes and non-printable control characters (keeping tab, newline,
+    carriage return). Also replaces lone Unicode surrogates which are invalid in JSON.
+    """
+    import re
+
+    # Replace null bytes and control chars (except \t \n \r)
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    # Replace lone surrogates (not valid in JSON / UTF-8)
+    cleaned = cleaned.encode("utf-8", errors="replace").decode(
+        "utf-8", errors="replace"
+    )
+    return cleaned
+
+
+# 70% of Claude Sonnet 4.6 200K-token context window × 4 chars/token.
+# Used as the default max_chars for compression across all providers.
+DEFAULT_FEEDBACK_MAX_CHARS: int = 560_000
+
+_COMPRESS_SYSTEM_PROMPT = (
+    "You are a lossless evidence compressor. "
+    "Your only job is to compress the provided tool-call evidence so it fits "
+    "within a character budget while preserving every fact that matters: "
+    "URLs, dates, numbers, entity names, key claims, and direct quotes. "
+    "Discard: duplicate entries, boilerplate wrappers, verbose prose, "
+    "and low-signal metadata. "
+    "Output only the compressed evidence text — no preamble, no commentary."
+)
+
+
+async def compress_tool_feedback(
+    feedback: str,
+    max_chars: int = DEFAULT_FEEDBACK_MAX_CHARS,
+    model_client: Any = None,
+) -> str:
+    """Compress text to ≤ max_chars using a focused LLM call.
+
+    Raises on failure — no silent data loss via hard truncation.
+    """
+    from anymind.runtime.llm_errors import safe_ainvoke
+
+    feedback = sanitize_for_llm(feedback)
+    if len(feedback) <= max_chars:
+        return feedback
+
+    user_prompt = (
+        f"Compress the following tool evidence to under {max_chars} characters.\n\n"
+        f"{feedback}"
+    )
+    message = await safe_ainvoke(
+        model_client,
+        [("system", _COMPRESS_SYSTEM_PROMPT), ("user", user_prompt)],
+        _compressing=True,
+    )
+    return message_text(message)
+
+
 def truncate_text(text: str, max_chars: int) -> str:
     if max_chars <= 0:
         return ""

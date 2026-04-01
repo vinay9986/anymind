@@ -93,6 +93,7 @@ class _GoTRuntime:
                 {"messages": [("user", user_prompt)]},
                 config=config,
                 llm_only=False,
+                model_client=self._context.model_client,
             )
             messages = result.get("messages", [])
             if not messages:

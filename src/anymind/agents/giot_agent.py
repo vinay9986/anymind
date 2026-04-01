@@ -124,6 +124,7 @@ class _GIoTRuntime:
             {"messages": [("user", user_prompt)]},
             config=config,
             llm_only=False,
+            model_client=self._context.model_client,
         )
         messages = result.get("messages", [])
         if not messages:
@@ -325,12 +326,13 @@ class _GIoTRuntime:
             for i in range(self._settings.n_agents)
         ]
 
+        initial_scratchpad = tool_feedback_from_ledger()
         agent_states: list[dict[str, Any]] = [
             {
                 "query": query,
                 "prompt_history": "",
                 "latest_answer": "No answer yet",
-                "tool_scratchpad": tool_feedback_from_ledger(),
+                "tool_scratchpad": initial_scratchpad,
                 "iteration": 1,
                 "self_consistency_applied": False,
             }

@@ -114,6 +114,7 @@ class _AGoTRuntime:
                 {"messages": [("user", user_prompt)]},
                 config=run_config,
                 llm_only=False,
+                model_client=self._context.model_client,
             )
             messages = result.get("messages", [])
             if not messages:

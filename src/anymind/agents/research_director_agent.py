@@ -447,6 +447,7 @@ class _ResearchDirectorRuntime:
                     {"messages": [("user", question)]},
                     config={"configurable": {"thread_id": thread_id}},
                     llm_only=False,
+                    model_client=self._context.model_client,
                 )
                 messages = result.get("messages", [])
                 answer = message_text(messages[-1]) if messages else ""
@@ -499,9 +500,7 @@ class _ResearchDirectorRuntime:
                 "strategy": p.strategy,
                 "status": p.status,
                 "probe_question": p.probe_question,
-                "answer": truncate_text(
-                    p.answer, int(self._settings.probe_answer_preview_chars)
-                ),
+                "answer": p.answer,
             }
             for p in probe_history
         ]

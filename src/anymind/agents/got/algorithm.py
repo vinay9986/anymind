@@ -28,7 +28,7 @@ from anymind.agents.got.validators import (
     make_validator_finalise,
     make_validator_verifier,
 )
-from anymind.agents.iot_utils import truncate_text
+from anymind.agents.iot_utils import sanitize_for_llm
 from anymind.runtime.evidence import get_current_ledger
 from anymind.runtime.onnx_embedder import OnnxSentenceEmbedder
 from anymind.runtime.validated_json import ValidatedJsonResult
@@ -456,7 +456,7 @@ class GoTAlgorithm:
         if len(leaves) > top_k:
             leaves = sorted(leaves, key=lambda n: n.total_score, reverse=True)[:top_k]
         summary = "\n".join(
-            f"- [{n.id}] {n.title}: {n.answer if n.answer is not None else 'N/A'}"
+            f"- [{n.id}] {n.title}: {sanitize_for_llm(n.answer) if n.answer is not None else 'N/A'}"
             for n in leaves
         )
         user_prompt = USER_PROMPT_FINALISE.format(
@@ -664,10 +664,8 @@ class GoTAlgorithm:
         solved.sort(key=lambda n: (n.depth, -n.total_score))
         lines: list[str] = []
         for node in solved[:8]:
-            ans = truncate_text(str(node.answer or ""), 240)
-            lines.append(f"- [L{node.depth}] {node.title}: {ans}")
-        summary = "\n".join(lines)
-        return truncate_text(summary, self.cfg.context_max_chars)
+            lines.append(f"- [L{node.depth}] {node.title}: {str(node.answer or '')}")
+        return "\n".join(lines)
 
     def _tool_feedback(self) -> str:
         blob = self._tool_blob()
@@ -677,28 +675,13 @@ class GoTAlgorithm:
 
     def _tool_blob(self) -> str:
         ledger = get_current_ledger()
-        max_chars = int(self.cfg.tool_feedback_max_chars)
         if ledger is not None:
             records = ledger.recent()
             if records:
-                if max_chars <= 0:
-                    return "\n".join(
-                        f"[{record.id}] {record.tool}: {record.content.strip()}"
-                        for record in records
-                    ).strip()
-                parts: list[str] = []
-                total = 0
-                for record in records:
-                    block = f"[{record.id}] {record.tool}: {record.content.strip()}"
-                    if total + len(block) > max_chars:
-                        remaining = max_chars - total
-                        if remaining > 0:
-                            parts.append(block[:remaining].rstrip())
-                        break
-                    parts.append(block)
-                    total += len(block)
-                return "\n".join(parts).strip()
-
+                return "\n".join(
+                    f"[{record.id}] {record.tool}: {record.content.strip()}"
+                    for record in records
+                ).strip()
         return ""
 
     def _solver_context(self, node: GoTNode) -> str:

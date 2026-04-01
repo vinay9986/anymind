@@ -20,5 +20,8 @@
   "cache": {
     "redis_url": "redis://localhost:6379/0",
     "ttl_seconds": 300
+  },
+  "sop": {
+    "refinement_enabled": false
   }
 }

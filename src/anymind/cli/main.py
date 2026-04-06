@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import uuid
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +19,9 @@ from anymind.config.loader import load_model_config, load_model_config_from_path
 from anymind.config.schemas import ModelConfig
 from anymind.runtime.logging import configure_logging
 from anymind.runtime.orchestrator import BudgetExceededError, Orchestrator
+
+_PROJECT_ROOT = Path(__file__).parents[3]
+# parents[0]=cli/, [1]=anymind/, [2]=src/, [3]=project root
 
 app = typer.Typer(add_completion=False, invoke_without_command=True)
 console = Console()
@@ -54,6 +59,49 @@ def _format_evidence(evidence: list[dict[str, object]]) -> str:
         lines.append(line)
         total += addition
     return "\n".join(lines)
+
+
+def _save_artifact(agent: str, query: str, response: str, evidence: list[dict]) -> None:
+    today = date.today().isoformat()
+
+    if agent == "sop_agent":
+        out_dir = _PROJECT_ROOT / "newsletters"
+        stem = today
+    elif agent == "research_agent":
+        out_dir = _PROJECT_ROOT / "research"
+        slug = re.sub(r"[^a-z0-9\s-]", "", query.lower())
+        slug = re.sub(r"\s+", "-", slug.strip())
+        slug = re.sub(r"-+", "-", slug)[:40].rstrip("-")
+        stem = f"{today}-{slug}" if slug else today
+    else:
+        return
+
+    ev_lines: list[str] = []
+    for rec in evidence:
+        rec_id = str(rec.get("id", "")).strip()
+        tool = str(rec.get("tool", "")).strip()
+        content = str(rec.get("content", "")).strip()
+        if content:
+            ev_lines.append(f"[{rec_id}] {tool}: {content}")
+
+    body = response.rstrip()
+    if ev_lines:
+        body += "\n\n---\n\n## evidence\n" + "\n".join(ev_lines) + "\n"
+
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"{stem}.md"
+        if path.exists():
+            counter = 1
+            while True:
+                path = out_dir / f"{stem}-{counter}.md"
+                if not path.exists():
+                    break
+                counter += 1
+        path.write_text(body, encoding="utf-8")
+        console.print(f"saved → {path}", style="dim")
+    except OSError as exc:
+        console.print(f"[warning] could not save artifact: {exc}", style="bold yellow")
 
 
 def _run_chat(
@@ -103,6 +151,12 @@ def _run_chat(
                 except BudgetExceededError as exc:
                     console.print(str(exc), style="bold red")
                 else:
+                    _save_artifact(
+                        agent,
+                        query or "",
+                        result["response"],
+                        result.get("evidence") or [],
+                    )
                     console.print(
                         Panel(
                             result["response"],
@@ -143,6 +197,12 @@ def _run_chat(
                     except BudgetExceededError as exc:
                         console.print(str(exc), style="bold red")
                         break
+                    _save_artifact(
+                        agent,
+                        user_input,
+                        result["response"],
+                        result.get("evidence") or [],
+                    )
                     console.print(
                         Panel(
                             result["response"],
